@@ -1,7 +1,7 @@
 abstract ScalarReTerm <: ReTerm
 
 type SimpleScalarReTerm <: ScalarReTerm
-    f:PooledDataVector                  # grouping factor
+    f::PooledDataVector                  # grouping factor
     λ::FloatingPoint
 end
 
@@ -29,7 +29,7 @@ end
 
 function *(t::SimpleScalarReTerm, v::VecOrMat{Float64})
     k = size(t,1)
-    A_mul_B!(Array(v, isa(v,Vector) ? k : (k,size(v,2))), t, v)
+    A_mul_B!(Array(eltype(v), isa(v,Vector) ? (k,) : (k,size(v,2))), t, v)
 end
 
 function Base.Ac_mul_B!(r::VecOrMat, t::SimpleScalarReTerm, v::VecOrMat)
@@ -51,5 +51,7 @@ end
 
 function Base.Ac_mul_B(t::SimpleScalarReTerm, v::VecOrMat)
     k = size(t,2)
-    Ac_mul_B!(Array(v, isa(v,Vector) ? k : (k, size(v,2))))
+    Ac_mul_B!(Array(eltype(v), isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
 end
+
+PDMats.PDMat(t::SimpleScalarReTerm) = PDiagMat(t * ones(size(t, 2)))
