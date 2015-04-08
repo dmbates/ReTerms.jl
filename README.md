@@ -1,2 +1,3 @@
-# ReTerm.jl
-Package providing abstract random-effects terms and specific types 
+# ReTerms.jl
+
+Package providing abstract and concrete random-effects terms types and methods. 
