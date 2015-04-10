@@ -1,14 +1,22 @@
 using ReTerms, DataArrays, PDMats
 using Base.Test
 
-Batch = compact(@pdata(rep('A':'F',5)))
-sf = SimpleScalarReTerm(Batch,1.)
+const Batch = compact(@pdata(rep('A':'F', 1, 5)))
+const sf = SimpleScalarReTerm(Batch,1.)
+const Yield = [1545.,1440.,1440.,1520.,1580.,1540.,1555.,1490.,1560.,1495.,
+               1595.,1550.,1605.,1510.,1560.,1445.,1440.,1595.,1465.,1545.,
+               1595.,1630.,1515.,1635.,1625.,1520.,1455.,1450.,1480.,1445.]
 
 @test size(sf) == (6,30)
 @test size(sf,1) == 6
 @test size(sf,2) == 30
 @test size(sf,3) == 1
 
-@test sf * ones(30) == fill(5.,6)
+dd = fill(5., 6)
+@test sf * ones(30) == dd
 @test sf'ones(6) == ones(30)
+@test PDMat(sf)\(sf*Yield) == [1505.,1528.,1564.,1498.,1600.,1470.]
 
+sf.λ = 0.5
+@test sf * ones(30) == dd ./ 2.
+@test PDMat(sf)\(sf*Yield) == [1505.,1528.,1564.,1498.,1600.,1470.]
