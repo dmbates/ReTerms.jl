@@ -1,8 +1,14 @@
 module ReTerms
 
-    using PDMats, DataArrays.PooledDataVector, Mamba, Distributions
+    using Compat, PDMats, DataArrays.PooledDataVector, Mamba, Distributions
 
-    export ReTerm, ScalarReTerm, SimpleScalarReTerm
+if VERSION < v"0.4-"
+    using Docile                        # for the @doc macro
+end
+
+    export ReTerm, ScalarReTerm         # types
+
+    export crossprod, lowerbd, update!
 
     abstract ReTerm
 
