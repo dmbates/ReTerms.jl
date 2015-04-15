@@ -60,15 +60,28 @@ function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, v::VecOrMat{T})
     Ac_mul_B!(Array(T, isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
 end
 
-## This should be rewritten as a method for Ac_mul_B that checks for is(s,t)
-function crossprod(t::ScalarReTerm)
-    z = t.z
-    refs = t.f.refs
-    res = zeros(eltype(z), size(t, 2))
-    for i in 1:length(z)
-        res[refs[i]] += abs2(z[i])
+function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, s::ScalarReTerm{T})
+    if is(s,t)
+        z = t.z
+        refs = t.f.refs
+        res = zeros(eltype(z), size(t, 2))
+        for i in 1:length(z)
+            res[refs[i]] += abs2(z[i])
+        end
+        return PDiagMat(scale!(res, abs2(t.λ)))
     end
-    PDiagMat(scale!(res, abs2(t.λ)))
+    (n = size(t,1)) == size(s,1) || throw(DimensionMismatch(""))
+    I = Int[]
+    J = Int[]
+    V = T[]
+    tr = t.f.refs
+    sr = s.f.refs
+    for i in 1:n
+        push!(I, tr[i])
+        push!(J, sr[i])
+        push!(V, t.z[i] * s.z[i])
+    end
+    sparse(I,J,V)
 end
 
 lowerbd(t::ScalarReTerm) = zeros(1)
@@ -79,4 +92,4 @@ function update!(t::ScalarReTerm, x)
 end
 
 @doc "Solve u := (t't + I)\(t'r)" ->
-pls(t::ScalarReTerm, r::VecOrMat) = (crossprod(t) + I)\(t'r)
+pls(t::ScalarReTerm, r::VecOrMat) = (t't + I)\(t'r)
