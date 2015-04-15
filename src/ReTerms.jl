@@ -8,7 +8,7 @@ end
 
     export ReTerm, ScalarReTerm         # types
 
-    export lowerbd, update!
+    export lowerbd, pls, update!
 
     abstract ReTerm
 

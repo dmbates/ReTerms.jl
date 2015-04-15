@@ -15,10 +15,10 @@ const Yield = [1545.,1440.,1440.,1520.,1580.,1540.,1555.,1490.,1560.,1495.,
 dd = fill(5., 6)
 @test sf'ones(30) == dd
 @test sf * ones(6) == ones(30)
-@test crossprod(sf)\(sf'Yield) == [1505.,1528.,1564.,1498.,1600.,1470.]
-(crossprod(sf) + I)\(sf' * (Yield - mean(Yield)))
+@test (sf'sf)\(sf'Yield) == [1505.,1528.,1564.,1498.,1600.,1470.]
+pls(sf, Yield - mean(Yield))
 
 update!(sf, 0.5)
 @test sf'ones(30) == dd ./ 2.
-@test crossprod(sf)\(sf'Yield) == 2. .* [1505.,1528.,1564.,1498.,1600.,1470.]
-(crossprod(sf) + I)\(sf' * (Yield - mean(Yield)))
+@test (sf'sf)\(sf'Yield) == 2. .* [1505.,1528.,1564.,1498.,1600.,1470.]
+pls(sf, Yield - mean(Yield))

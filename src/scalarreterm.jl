@@ -2,14 +2,23 @@ type ScalarReTerm{T<:FloatingPoint} <: ReTerm
     f::PooledDataVector                 # grouping factor
     z::Vector{T}
     λ::T
+    crprdiag::Vector{T}
+    plsdiag::Vector{T}
+    plsdinv::Vector{T}
 end
 
 function ScalarReTerm{T<:FloatingPoint}(f::PooledDataVector, z::Vector{T})
-    length(f) == length(z) || throw(DimensionMismatch(""))
-    ScalarReTerm(f, z, one(T))
+    (n = length(f)) == length(z) || throw(DimensionMismatch(""))
+    q = length(f.pool)
+    crprd = zeros(T, q)
+    for i in 1:n
+        crprd[f.refs[i]] += abs2(z[i])
+    end
+    plsd = crprd .+ one(T)
+    ScalarReTerm(f, z, one(T), crprd, plsd, [inv(x) for x in plsd])
 end
 
-ScalarReTerm(f::PooledDataVector) = ScalarReTerm(f, ones(length(f)), 1.)
+ScalarReTerm(f::PooledDataVector) = ScalarReTerm(f, ones(length(f)))
 
 Base.size(t::ScalarReTerm) = (length(t.z), length(t.f.pool))
 Base.size(t::ScalarReTerm,i::Integer) =
@@ -84,12 +93,35 @@ function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, s::ScalarReTerm{T})
     sparse(I,J,V)
 end
 
-lowerbd(t::ScalarReTerm) = zeros(1)
+lowerbd{T<:FloatingPoint}(t::ScalarReTerm{T}) = zeros(T,1)
 
-function update!(t::ScalarReTerm, x) 
-    t.λ = convert(eltype(t.z), x)
+function update!{T<:FloatingPoint}(t::ScalarReTerm{T}, x) 
+    t.λ = convert(T, x)
+    λsq = abs2(t.λ)
+    for j in 1:size(t,2)
+        t.plsdiag[j] = λsq * t.crprdiag[j] + one(T)
+        t.plsdinv[j] = inv(t.plsdiag[j])
+    end
     t
 end
 
 @doc "Solve u := (t't + I)\(t'r)" ->
-pls(t::ScalarReTerm, r::VecOrMat) = (t't + I)\(t'r)
+pls(t::ScalarReTerm, r::VecOrMat) = PDMats.PDiagMat(t.plsdiag, t.plsdinv)\(t'r)
+
+Base.logdet(t::ScalarReTerm) = sum(Base.LogFun(), t.plsdiag)
+
+function pwrss{T<:FloatingPoint}(t::ScalarReTerm{T}, y::Vector{T})
+    u = pls(t, y)
+    res = sumabs2(u)
+    pred = t * u
+    for i in 1:length(y)
+        res += abs2(y[i] - pred[i])
+    end
+    res
+end
+    
+function objective!{T<:FloatingPoint}(t::ScalarReTerm{T}, λ::T, r::Vector{T})
+    update!(t,λ)
+    n = size(t, 1)
+    logdet(t) + n * (1.+log(2π * pwrss(t, r)/n))
+end
