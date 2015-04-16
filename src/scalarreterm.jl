@@ -95,7 +95,7 @@ end
 
 lowerbd{T<:FloatingPoint}(t::ScalarReTerm{T}) = zeros(T,1)
 
-function update!{T<:FloatingPoint}(t::ScalarReTerm{T}, x) 
+function update!{T<:FloatingPoint}(t::ScalarReTerm{T}, x)
     t.λ = convert(T, x)
     λsq = abs2(t.λ)
     for j in 1:size(t,2)
@@ -119,7 +119,7 @@ function pwrss{T<:FloatingPoint}(t::ScalarReTerm{T}, y::Vector{T})
     end
     res
 end
-    
+
 function objective!{T<:FloatingPoint}(t::ScalarReTerm{T}, λ::T, r::Vector{T})
     update!(t,λ)
     n = size(t, 1)
