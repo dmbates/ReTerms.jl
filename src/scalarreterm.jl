@@ -32,11 +32,11 @@ function Base.A_mul_B!(r::VecOrMat, t::ScalarReTerm, v::VecOrMat)
     size(r,1) == n && size(v,1) == q && size(r,2) == k || throw(DimensionMismatch(""))
     if k == 1
         for i in 1:n
-            r[i] = t.z[i] * v[t.f.refs[i]]
+            @inbounds r[i] = t.z[i] * v[t.f.refs[i]]
         end
     else
         for j in 1:k, i in 1:n
-            r[i,j] = t.z[i] * v[t.f.refs[i],j]
+            @inbounds r[i,j] = t.z[i] * v[t.f.refs[i],j]
         end
     end
     scale!(r,t.λ)
@@ -54,11 +54,11 @@ function Base.Ac_mul_B!(r::VecOrMat, t::ScalarReTerm, v::VecOrMat)
     fill!(r,zero(eltype(r)))
     if k == 1
         for i in 1:n
-            r[t.f.refs[i]] += v[i] * t.z[i]
+            @inbounds r[t.f.refs[i]] += v[i] * t.z[i]
         end
     else
         for j in 1:k, i in 1:n
-            r[t.f.refs[i],j] += v[i,j] * t.z[i]
+            @inbounds r[t.f.refs[i],j] += v[i,j] * t.z[i]
         end
     end
     scale!(r,t.λ)
@@ -69,28 +69,31 @@ function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, v::VecOrMat{T})
     Ac_mul_B!(Array(T, isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
 end
 
-function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, s::ScalarReTerm{T})
-    if is(s,t)
-        z = t.z
-        refs = t.f.refs
-        res = zeros(eltype(z), size(t, 2))
-        for i in 1:length(z)
-            res[refs[i]] += abs2(z[i])
+function Base.Ac_mul_B!(r::VecOrMat, v::VecOrMat, t::ScalarReTerm)
+    n,q = size(t)
+    k = size(v,2)
+    size(r,2) == q && size(v,1) == n && size(r,1) == k || throw(DimensionMismatch(""))
+    fill!(r, zero(eltype(r)))
+    if k == 1
+        for i in 1:n
+            @inbounds r[t.f.refs[i]] += v[i] * t.z[i]
         end
-        return PDiagMat(scale!(res, abs2(t.λ)))
+    else
+        for j in 1:k, i in 1:n
+            @inbounds r[t.f.refs[i],j] += v[i,j] * t.z[i]
+        end
     end
+    scale!(r,t.λ)
+end
+
+Base.Ac_mul_B{T<:FloatingPoint}(v::VecOrMat{T},t::ScalarReTerm{T}) =
+    Ac_mul_B!(Array(T, (size(v,2), size(t,2))), v, t)
+
+
+function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, s::ScalarReTerm{T})
+    is(s,t) && return PDiagMat(abs2(t.λ) .* t.crprdiag)
     (n = size(t,1)) == size(s,1) || throw(DimensionMismatch(""))
-    I = Int[]
-    J = Int[]
-    V = T[]
-    tr = t.f.refs
-    sr = s.f.refs
-    for i in 1:n
-        push!(I, tr[i])
-        push!(J, sr[i])
-        push!(V, t.z[i] * s.z[i])
-    end
-    sparse(I,J,V)
+    scale!(t.λ * s.λ, sparse(convert(Vector{Int32},t.f.refs),convert(Vector{Int32},s.f.refs),t.z .* s.z))
 end
 
 lowerbd{T<:FloatingPoint}(t::ScalarReTerm{T}) = zeros(T,1)
@@ -106,7 +109,7 @@ function update!{T<:FloatingPoint}(t::ScalarReTerm{T}, x)
 end
 
 @doc "Solve u := (t't + I)\(t'r)" ->
-pls(t::ScalarReTerm, r::VecOrMat) = PDMats.PDiagMat(t.plsdiag, t.plsdinv)\(t'r)
+pls(t::ScalarReTerm, r::VecOrMat) = PDiagMat(t.plsdiag, t.plsdinv)\(t'r)
 
 Base.logdet(t::ScalarReTerm) = sum(Base.LogFun(), t.plsdiag)
 
@@ -124,4 +127,30 @@ function objective!{T<:FloatingPoint}(t::ScalarReTerm{T}, λ::T, r::Vector{T})
     update!(t,λ)
     n = size(t, 1)
     logdet(t) + n * (1.+log(2π * pwrss(t, r)/n))
+end
+
+function PDMats.whiten!{T<:FloatingPoint}(r::DenseVector{T}, t::ScalarReTerm{T}, b::DenseVector{T})
+    (q = size(t,2)) == length(b) == length(r) || throw(DimensionMismatch(""))
+    for i in 1:q
+        r[i] = sqrt(t.plsdinv[i]) * v[i]
+    end
+    r
+end
+
+PDMats.whiten!{T<:FloatingPoint}(t::ScalarReTerm{T}, b::DenseVector{T}) = whiten!(b, t, b)
+
+PDMats.whiten!{T<:FloatingPoint}(r::DenseMatrix{T}, t::ScalarReTerm{T}, b::DenseMatrix{T}) =
+    broadcast!(*, r, b, sqrt(t.plsdinv))
+
+PDMats.whiten!{T<:FloatingPoint}(t::ScalarReTerm{T}, B::DenseMatrix{T}) = whiten!(B, t, B)
+
+function PDMats.whiten!{T<:FloatingPoint}(t::ScalarReTerm{T}, B::SparseMatrixCSC{T})
+    (q = size(t,2)) == size(B,1) || throw(DimensionMismatch(""))
+    sc = sqrt(t.plsdinv)
+    bv = B.nzval
+    rv = B.rowval
+    for i in 1:length(rv)
+        bv[i] *= sc[rv[i]]
+    end
+    B
 end
