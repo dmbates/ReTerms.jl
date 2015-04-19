@@ -1,18 +1,18 @@
 module ReTerms
 
-    using Compat, PDMats, DataArrays.PooledDataVector #, Mamba, Distributions
+    using Compat, DataArrays.PooledDataVector, Optim, PDMats, StatsBase
 
 if VERSION < v"0.4-"
     using Docile                        # for the @doc macro
 end
 
-    export ReTerm, ScalarReTerm         # types
+    export FeTerm, LMM, ReTerm, ScalarReTerm         # types
 
     export lowerbd, pls, update!
 
     abstract ReTerm
 
     include("scalarreterm.jl")
-#    include("mamba.jl")
+    include("pls.jl")
 
 end # module
