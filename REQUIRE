@@ -1,6 +1,7 @@
 Compat
 DataArrays
-Distributions
+# Distributions
 Docile
 PDMats
+StatsBase
 # Mamba
