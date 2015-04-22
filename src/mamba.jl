@@ -1,1 +1,1 @@
-*(t::ReTerm,v::Mamba.Stochastic{Vector{Float64}}) = t * v.value
+*(t::ReTerm{Float64},v::Mamba.Stochastic{Vector{Float64}}) = t * v.value

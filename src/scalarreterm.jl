@@ -1,4 +1,4 @@
-type ScalarReTerm{T<:FloatingPoint} <: ReTerm
+type ScalarReTerm{T<:FloatingPoint} <: ReTerm{T}
     f::PooledDataVector                 # grouping factor
     z::Vector{T}
     λ::T

@@ -13,16 +13,18 @@ end
 type LMM <: StatsBase.RegressionModel
     X::FeTerm
     re::Array{ReTerm,1}
-    y::Vector{Float64}
+    y::Vector{Float64}  # response vector
+    uβ::Vector{Float64} # concatenation of spherical random effects and fixed-effects
+    ty::Vector{Float64} # concatenation of Z'y blocks and X'y
 end
 
-function LMM(X::Matrix{Float64}, re::Array{ReTerm,1}, y::Vector{Float64})
+function LMM(X::Matrix{Float64}, re::Vector{ReTerm{Float64}}, y::Vector{Float64})
     n,p = size(X)
     all(t -> size(t,1) == n, re) && length(y) == n || throw(DimensionMismatch(""))
     LMM(FeTerm(X),re,y)
 end
 
-function LMM(X::Matrix{Float64}, re::ReTerm, y::Vector{Float64})
+function LMM(X::Matrix{Float64}, re::ReTerm{Float64}, y::Vector{Float64})
     size(re,1) == size(X,1) == length(y) || throw(DimensionMismatch(""))
     LMM(FeTerm(X),ReTerm[re],y)
 end
