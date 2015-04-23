@@ -10,8 +10,7 @@ end
 
     export lowerbd, pls, update!
 
-    abstract ReTerm{T<:FloatingPoint}
-
+    include("reterm.jl")
     include("scalarreterm.jl")
     include("vectorreterm.jl")
     include("pls.jl")
