@@ -8,11 +8,11 @@ type ScalarReTerm{T<:FloatingPoint} <: ReTerm{T}
 end
 
 function ScalarReTerm{T<:FloatingPoint}(f::PooledDataVector, z::Vector{T})
-    (n = length(f)) == length(z) || throw(DimensionMismatch(""))
-    q = length(f.pool)
-    crprd = zeros(T, q)
-    for i in 1:n
-        crprd[f.refs[i]] += abs2(z[i])
+    length(f) == length(z) || throw(DimensionMismatch(""))
+    rr = f.refs
+    crprd = zeros(T, length(f.pool))
+    for i in @compat eachindex(z)
+        crprd[rr[i]] += abs2(z[i])
     end
     plsd = crprd .+ one(T)
     ScalarReTerm(f, z, one(T), crprd, plsd, [inv(x) for x in plsd])
@@ -30,13 +30,15 @@ function Base.A_mul_B!(r::VecOrMat, t::ScalarReTerm, v::VecOrMat)
     n,q = size(t)
     k = size(v,2)
     size(r,1) == n && size(v,1) == q && size(r,2) == k || throw(DimensionMismatch(""))
+    tz = t.z
+    rr = t.f.refs
     if k == 1
-        for i in 1:n
-            @inbounds r[i] = t.z[i] * v[t.f.refs[i]]
+        for i in @compat eachindex(r)
+            @inbounds r[i] = tz[i] * v[rr[i]]
         end
     else
         for j in 1:k, i in 1:n
-            @inbounds r[i,j] = t.z[i] * v[t.f.refs[i],j]
+            @inbounds r[i,j] = tz[i] * v[rr[i],j]
         end
     end
     scale!(r,t.λ)
