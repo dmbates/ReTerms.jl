@@ -8,7 +8,7 @@ end
 
     export FeTerm, LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
-    export lowerbd, pls, update!
+    export lowerbd, pls, pls!, update!
 
     include("reterm.jl")
     include("scalarreterm.jl")
