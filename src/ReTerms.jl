@@ -1,6 +1,6 @@
 module ReTerms
 
-    using Compat, DataArrays.PooledDataVector, Optim, PDMats, StatsBase
+    using Compat, DataArrays.PooledDataVector, PDMats, StatsBase
 
 if VERSION < v"0.4-"
     using Docile                        # for the @doc macro
@@ -8,7 +8,7 @@ end
 
     export FeTerm, LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
-    export lowerbd, pls, pls!, update!
+    export getpars!, lowerbd, pls, pls!, reterm, setpars!
 
     include("reterm.jl")
     include("scalarreterm.jl")

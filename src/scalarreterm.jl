@@ -18,8 +18,6 @@ function ScalarReTerm{T<:FloatingPoint}(f::PooledDataVector, z::Vector{T})
     ScalarReTerm(f, z, one(T), crprd, plsd, [inv(x) for x in plsd])
 end
 
-ScalarReTerm(f::PooledDataVector) = ScalarReTerm(f, ones(length(f)))
-
 Base.size(t::ScalarReTerm) = (length(t.z), length(t.f.pool))
 Base.size(t::ScalarReTerm,i::Integer) =
     i < 1 ? throw(BoundsError()) :
@@ -100,7 +98,7 @@ end
 
 lowerbd{T<:FloatingPoint}(t::ScalarReTerm{T}) = zeros(T,1)
 
-function update!{T<:FloatingPoint}(t::ScalarReTerm{T}, x)
+function setpars!{T<:FloatingPoint}(t::ScalarReTerm{T}, x)
     t.λ = convert(T, x)
     λsq = abs2(t.λ)
     for j in 1:size(t,2)
@@ -133,7 +131,7 @@ function pwrss{T<:FloatingPoint}(t::ScalarReTerm{T}, y::Vector{T})
 end
 
 function objective!{T<:FloatingPoint}(t::ScalarReTerm{T}, λ::T, r::Vector{T})
-    update!(t,λ)
+    setpars!(t,λ)
     n = size(t, 1)
     logdet(t) + n * (1.+log(2π * pwrss(t, r)/n))
 end

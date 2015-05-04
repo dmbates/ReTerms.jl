@@ -10,24 +10,28 @@ function FeTerm(X::Matrix{Float64})
     FeTerm(X,XtX)
 end
 
+Base.size(f::FeTerm) = size(f.X)
+Base.size(f::FeTerm,i::Integer) = size(f.X,i)
+
 type LMM <: StatsBase.RegressionModel
     X::FeTerm
-    re::Array{ReTerm,1}
+    re::Vector
     y::Vector{Float64}  # response vector
     uβ::Vector{Float64} # concatenation of spherical random effects and fixed-effects
     ty::Vector{Float64} # concatenation of Z'y blocks and X'y
 end
 
-function LMM(X::Matrix{Float64}, re::Vector{ReTerm{Float64}}, y::Vector{Float64})
+function LMM{T<:Real}(X::FeTerm, rev::Vector, y::Vector{T})
     n,p = size(X)
-    all(t -> size(t,1) == n, re) && length(y) == n || throw(DimensionMismatch(""))
-    LMM(FeTerm(X),re,y)
+    all(t -> size(t,1) == n, rev) && length(y) == n || throw(DimensionMismatch(""))
+    yy = convert(Vector{Float64},y)
+    ty = vcat([re'yy for re in rev]..., X.X'yy)
+    LMM(X,rev,yy,zeros(length(ty)),ty)
 end
 
-function LMM(X::Matrix{Float64}, re::ReTerm{Float64}, y::Vector{Float64})
-    size(re,1) == size(X,1) == length(y) || throw(DimensionMismatch(""))
-    LMM(FeTerm(X),ReTerm[re],y)
-end
+LMM(X::Matrix, re::ReTerm, y::Vector) =  LMM(FeTerm(convert(Matrix{Float64},X)),ReTerm[re],y)
+LMM(re::ReTerm,y::Vector) = LMM(ones((length(y),1)),re,y)
+LMM(p::PooledDataVector,y::Vector) = LMM(reterm(p),y)
 
 function tune(lmm::LMM)
     r = copy(lmm.y)

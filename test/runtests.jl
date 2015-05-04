@@ -3,7 +3,7 @@ using Base.Test
 
 include(joinpath(dirname(@__FILE__),"data.jl"))
 
-const sf = ScalarReTerm(ds[:Batch])
+const sf = reterm(ds[:Batch])
 const Yield = convert(Vector{Float64}, array(ds[:Yield]))
 
 @test size(sf) == (30, 6)
@@ -20,7 +20,7 @@ pls(sf, Yield - mean(Yield))
 
 X = ones(30,1)
 @test X'sf == dd'
-update!(sf, 0.5)
+setpars!(sf, 0.5)
 @test sf'ones(30) == dd ./ 2.
 @test (sf'sf)\(sf'Yield) == 2. .* [1505.,1528.,1564.,1498.,1600.,1470.]
 pls(sf, Yield - mean(Yield))
