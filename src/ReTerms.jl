@@ -1,6 +1,6 @@
 module ReTerms
 
-    using Compat, DataArrays.PooledDataVector, PDMats, StatsBase
+    using Compat, DataArrays, PDMats, StatsBase
 
 if VERSION < v"0.4-"
     using Docile                        # for the @doc macro

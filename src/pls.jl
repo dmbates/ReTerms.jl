@@ -5,8 +5,9 @@ end
 
 function FeTerm(X::Matrix{Float64})
     XtX = X'X
-    r = rank(cholfact(XtX; pivot=true))
-    r == size(X,2) || throw(Base.RankDeficientException(r))
+if VERSION < v"0.4-"
+    rank(cholfact(XtX; pivot=true)) == size(X,2) || throw(Base.RankDeficientException(r))
+end
     FeTerm(X,XtX)
 end
 
@@ -31,7 +32,8 @@ end
 
 LMM(X::Matrix, re::ReTerm, y::Vector) =  LMM(FeTerm(convert(Matrix{Float64},X)),ReTerm[re],y)
 LMM(re::ReTerm,y::Vector) = LMM(ones((length(y),1)),re,y)
-LMM(p::PooledDataVector,y::Vector) = LMM(reterm(p),y)
+LMM(p::PooledDataVector,y::Vector) = LMM(FeTerm(ones((length(y),1))),[reterm(p);],y)
+LMM(p::PooledDataVector,y::DataVector) = LMM(FeTerm(ones((length(y),1))),[reterm(p);],convert(Array,y))
 
 function tune(lmm::LMM)
     r = copy(lmm.y)
