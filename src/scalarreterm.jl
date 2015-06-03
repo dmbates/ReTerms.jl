@@ -80,7 +80,7 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
         end
     else
         for j in 1:k, i in 1:n
-            @inbounds r[t.f.refs[i],j] += v[i,j] * t.z[i]
+            @inbounds r[j,t.f.refs[i]] += v[i,j] * t.z[i]
         end
     end
     scale!(r,t.λ)
