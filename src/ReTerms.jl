@@ -1,15 +1,12 @@
 module ReTerms
 
-    using Compat, DataArrays, PDMats, StatsBase
+    using DataArrays, PDMats, StatsBase
 
-if VERSION < v"0.4-"
-    using Docile                        # for the @doc macro
-end
-
-    export FeTerm, LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
+    export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
     export getpars!, lowerbd, pls, pls!, reterm, setpars!
 
+    include("sputils.jl")
     include("reterm.jl")
     include("scalarreterm.jl")
     include("vectorreterm.jl")

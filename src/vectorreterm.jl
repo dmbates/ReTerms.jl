@@ -14,7 +14,7 @@ function VectorReTerm{T<:FloatingPoint}(f::PooledDataVector, zt::Matrix{T})
     q = length(f.pool)
     crprd = zeros(T, (k, k, q))
     for i in 1:n
-        BLAS.syr!('L', one(T), sub(zt,:,i), sub(crprd,:,:,@compat(Int(f.refs[i]))))
+        BLAS.syr!('L', one(T), sub(zt,:,i), sub(crprd,:,:,Int(f.refs[i])))
     end
     plsdiag = copy(crprd)
     for j in 1:q, i in 1:k

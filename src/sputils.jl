@@ -15,3 +15,8 @@ function cholpattern{Tv,Ti}(A::SparseMatrixCSC{Tv,Ti})
     end
     sparse(I,J,one(Tv))
 end
+
+function isdenseish(S::SparseMatrixCSC,threshold=0.3)
+    0. < threshold < 1. || error("threshold must be in (0.,1.)")
+    nnz(S)/(*(size(S)...)) > threshold
+end

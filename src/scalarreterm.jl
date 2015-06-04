@@ -2,20 +2,12 @@ type ScalarReTerm{T<:FloatingPoint} <: ReTerm{T}
     f::PooledDataVector                 # grouping factor
     z::Vector{T}
     λ::T
-    crprdiag::Vector{T}
-    plsdiag::Vector{T}
-    plsdinv::Vector{T}
 end
 
 function ScalarReTerm{T<:FloatingPoint}(f::PooledDataVector, z::Vector{T})
     length(f) == length(z) || throw(DimensionMismatch(""))
     rr = f.refs
-    crprd = zeros(T, length(f.pool))
-    for i in @compat eachindex(z)
-        crprd[rr[i]] += abs2(z[i])
-    end
-    plsd = crprd .+ one(T)
-    ScalarReTerm(f, z, one(T), crprd, plsd, [inv(x) for x in plsd])
+    ScalarReTerm(f, z, one(T))
 end
 
 Base.size(t::ScalarReTerm) = (length(t.z), length(t.f.pool))
@@ -31,7 +23,7 @@ function Base.A_mul_B!(r::DenseVecOrMat, t::ScalarReTerm, v::DenseVecOrMat)
     tz = t.z
     rr = t.f.refs
     if k == 1
-        for i in @compat eachindex(r)
+        for i in eachindex(r)
             @inbounds r[i] = tz[i] * v[rr[i]]
         end
     else
@@ -39,7 +31,7 @@ function Base.A_mul_B!(r::DenseVecOrMat, t::ScalarReTerm, v::DenseVecOrMat)
             @inbounds r[i,j] = tz[i] * v[rr[i],j]
         end
     end
-    scale!(r,t.λ)
+    r
 end
 
 function *{T<:FloatingPoint}(t::ScalarReTerm{T}, v::DenseVecOrMat{T})
@@ -91,9 +83,16 @@ Base.Ac_mul_B{T<:FloatingPoint}(v::DenseVecOrMat{T},t::ScalarReTerm{T}) =
 
 
 function Base.Ac_mul_B{T<:FloatingPoint}(t::ScalarReTerm{T}, s::ScalarReTerm{T})
-    is(s,t) && return PDiagMat(abs2(t.λ) .* t.crprdiag)
-    (n = size(t,1)) == size(s,1) || throw(DimensionMismatch(""))
-    scale!(t.λ * s.λ, sparse(convert(Vector{Int32},t.f.refs),convert(Vector{Int32},s.f.refs),t.z .* s.z))
+    if is(s,t)
+        crprd = zeros(length(s.f.pool))
+        z = s.z
+        rr = s.f.refs
+        for i in eachindex(z)
+            crprd[rr[i]] += abs2(z[i])
+        end
+        return Diagonal(crprd)
+    end
+    sparse(convert(Vector{Int32},t.f.refs),convert(Vector{Int32},s.f.refs),t.z .* s.z)
 end
 
 lowerbd{T<:FloatingPoint}(t::ScalarReTerm{T}) = zeros(T,1)
@@ -138,7 +137,7 @@ end
 
 function PDMats.whiten!{T<:FloatingPoint}(r::DenseVector{T}, t::ScalarReTerm{T}, b::DenseVector{T})
     (q = size(t,2)) == length(b) == length(r) || throw(DimensionMismatch(""))
-    for i in @compat eachindex(b)
+    for i in eachindex(b)
         r[i] = sqrt(t.plsdinv[i]) * b[i]
     end
     r
@@ -156,7 +155,7 @@ function PDMats.whiten!{T<:FloatingPoint}(t::ScalarReTerm{T}, B::SparseMatrixCSC
     sc = sqrt(t.plsdinv)
     bv = B.nzval
     rv = B.rowval
-    for i in @compat eachindex(bv)
+    for i in eachindex(bv)
         bv[i] *= sc[rv[i]]
     end
     B
