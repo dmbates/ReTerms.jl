@@ -4,7 +4,7 @@ module ReTerms
 
     export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
-    export getpars!, lowerbd, pls, pls!, reterm, setpars!
+    export getpars, lowerbd, pls, pls!, reterm, setpars!
 
     include("sputils.jl")
     include("reterm.jl")
