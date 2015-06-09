@@ -97,24 +97,23 @@ end
 
 lowerbd(t::ScalarReTerm) = zeros(Float64,1)
 
-function setpars!(t::ScalarReTerm, x, Aii::Diagonal{Float64}, Rii::PDiagMat)
+function setpars!(t::ScalarReTerm, x, Rii::PDiagMat)
     t.λ = convert(Float64,x[1])
     λsq = abs2(t.λ)
     rd = Rii.diag
-    ad = Aii.diag
     for j in eachindex(rd)
         rd[j] = λsq * ad[j] + 1.
     end
     t
 end
 
-function setpars!(t::ScalarReTerm, x, Aii::Diagonal{Float64}, Rii::PDMat)
+function setpars!(t::ScalarReTerm, x, Rii::PDMat)
     t.λ = convert(Float64,x[1])
     λsq = abs2(t.λ)
     rm = fill!(Rii.mat,0.)
-    ad = Aii.diag
     for j in 1:size(t,2)
-        rm[j,j] = λsq * ad[j] + 1.
+        rm[j,j] *= λsq 
+        rm[j,j] += 1.
     end
     t
 end

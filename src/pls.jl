@@ -32,7 +32,7 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
             for k in 1:(i - 1)
                 mm += A[k,i]'A[k,i]
             end
-            R[i,i] = isdiag(mm) ? PDiagMat(diag(mm)) : PDMat(full(mm))
+            R[i,i] = isdiag(mm) ? Diagonal(diag(mm)) : full(mm)
         else
             R[i,j] = copy(pr)
         end
@@ -55,27 +55,30 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
         copy!(R[i,j],A[i,j])
     end
     ## set parameters in r.e. terms and initialize diagonal blocks of R
-    for i in 1:(nt-2)
-        ti = lmm.trms[i]
-        setpars!(ti,sub(pars,gp[i]:(gp[i+1]-1)),lmm.A[i,i],lmm.R[i,i])
-        for j in (i+1):size(lmm.R,2)    # scale the ith row by λ
-            scale!(lmm.R[i,j],ti,lmm.A[i,j])
+    for j in 1:(nt-2)
+        tj = lmm.trms[j]
+        setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)),lmm.R[j,j])
+        for jj in (j+1):nt              # scale the jth row by λ
+            scale!(lmm.R[j,jj],tj)
         end
-        for k in 1:(i-1)                # scale the ith column by λ, downdate diagonal block
-            scale!(lmm.R[k,i],ti)
+        for i in 1:(j-1)                # scale the ith column by λ
+            scale!(lmm.R[i,j],tj)
         end
     end
     for j in 1:nt
         for i in 1:(j-1)
             downdate!(R[j,j],R[i,j])
         end
-        @show R[j,j]
-        # factor!(R[j,j])  # also adds the identity
-        # whiten blocks to the right
+        factorize!(R[j,j])
+        for jj in (j+1):nt
+            whiten!(R[j,j],R[j,jj])
+        end
     end
     lmm
 end
 
+factorize!(d::PDiagMat) = map!(inv,d.inv_diag,d.diag)
+    
 downdate!(d::PDMat,r::Matrix{Float64}) = BLAS.syrk!('U','T',-1.0,r,1.0,d.mat)
 
 function downdate!(d::PDMat,r::SparseMatrixCSC{Float64})
@@ -131,6 +134,9 @@ function downdate!(d::PDiagMat,m::DenseMatrix{Float64})
     dd[1] -= sum(abs2,m)
     d
 end
+
+Base.LinAlg.chol!(D::Diagonal) = map!(D.diag,chol!)
+
 Base.copy!(pd::PDiagMat,d::Diagonal{Float64}) = (copy!(pd.diag,d.diag);fill!(pd.inv_diag,NaN);pd)
 
 function Base.copy!(pd::PDMat,d::Diagonal{Float64})
