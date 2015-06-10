@@ -32,7 +32,7 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
             for k in 1:(i - 1)
                 mm += A[k,i]'A[k,i]
             end
-            R[i,i] = isdiag(mm) && size(mm,1) > 1 ? Diagonal(diag(mm)) : full(mm)
+            R[i,i] = cfactor!(isdiag(mm) && size(mm,1) > 1 ? Diagonal(diag(mm)) : full(mm))
         else
             R[i,j] = copy(pr)
         end
@@ -44,37 +44,43 @@ LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
 LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
 LMM(re::Vector,y::Vector) = LMM(ones((length(y),1)),re,y)
 
-## Slightly modified from the version in julia/base/linalg/cholesky.jl
+## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
 
-function chol!{T}(A::AbstractMatrix{T}, ::Type{Val{:U}})
+function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
     @inbounds begin
         for k = 1:n
             for i = 1:k - 1
                 downdate!(A[k,k],A[i,k])
             end
-            Akk = chol!(A[k,k], Val{:U})
-            A[k,k] = Akk
-            AkkInv = inv(Akk')
+            cfactor!(A[k,k])
             for j = k + 1:n
                 for i = 1:k - 1
                     downdate!(A[k,j],A[i,k],A[i,j])
                 end
-                A[k,j] = AkkInv*A[k,j]
+                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
             end
         end
     end
     return UpperTriangular(A)
 end
 
-chol!(D::Diagonal,::Type{Val{:U}}) = map!(D.diag,chol!)
+cfactor!(A::DenseMatrix{Float64}) = Base.LinAlg.chol!(A)
+cfactor!(x::Number) = sqrt(real(x))
+cfactor!(D::Diagonal) = (map!(cfactor!,D.diag); D)
+cfactor!(t::UpperTriangular{Float64}) = Base.LinAlg.chol!(t.data,Val{:U})
+
 
 function setpars!(lmm::LMM,pars::Vector{Float64})
     all(pars .>= lmm.lower) || error("elements of pars violate bounds")
     copy!(lmm.pars,pars)
     gp = lmm.gp
-    R = copy!(lmm.R,lmm.A)              # initialize R to a copy of A
-    nt = size(R,2)                      # total number of terms
+    nt = length(lmm.trms)               # number of terms
+    R = lmm.R
+    A = lmm.A
+    for j in 1:nt, i in 1:j
+        inject!(R[i,j],A[i,j])
+    end
     ## set parameters in r.e. terms, scale rows and columns, add identity
     for j in 1:(nt-2)
         tj = lmm.trms[j]
@@ -85,101 +91,67 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
         for i in 1:j                    # scale the ith column by λ
             scale!(tj,R[i,j])
         end
-        R[j,j] += I
+        inflate!(R[j,j])                # R[j,j] += I
     end
-    chol!(R,Val{:U})
+    cfactor!(R)
     lmm
 end
 
-factorize!(d::PDiagMat) = map!(inv,d.inv_diag,d.diag)
-    
-downdate!(d::PDMat,r::Matrix{Float64}) = BLAS.syrk!('U','T',-1.0,r,1.0,d.mat)
-
-function downdate!(d::PDMat,r::SparseMatrixCSC{Float64})
-    m,n = size(r)
-    size(d,2) == n || throw(DimensionMismatch(""))
-    rcp = r.colptr
-    rrv = r.rowval
-    rnz = r.nzval
-    m = d.mat
-    for j in 1:n
-        for k in rcp[j]:(rcp[j+1]-1)    # downdate the diagonal
-            m[j,j] -= abs2(rnz(k))
-        end
-        for i in 1:(j-1)                # downdate the off-diagonals
-            ki = rcp[i]
-            kj = rcp[j]
-            while (ki < rcp[i+1] && kj < rcp[j+i])
-                if rrv[ki] < rrv[kj]
-                    ki += 1
-                    next
-                elseif rrv[ki] > rrv[kj]
-                    kj += 1
-                    next
-                else
-                    m[i,j] -= rnz[ki] * rnz[kj]
-                    ki += 1
-                    kj += 1
-                end
-            end
-        end
+function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{T})
+    m,n = size(B)
+    dd = D.diag
+    length(dd) == m || throw(DimensionMismatch(""))
+    for j in 1:n, i in 1:m
+        B[i,j] /= dd[i]
     end
-    d.mat
+    B
 end
 
-function downdate!(d::PDiagMat,r::SparseMatrixCSC{Float64})
-    n = size(r,2)
-    dd = d.diag
-    length(dd) == n || throw(DimensionMismatch(""))
-    rcp = r.colptr
-    rnz = r.nzval
-    for j in 1:n
-        for k in rcp[j]:(rcp[j+1]-1)
-            dd[j] -= abs2(rnz[k])
-        end
+Base.LinAlg.A_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{T}) =
+    Base.LinAlg.Ac_ldiv_B!(D,B)
+
+downdate!(C::UpperTriangular{Float64},A::DenseMatrix{Float64}) = BLAS.syrk!('U','T',-1.0,A,1.0,C.data)
+
+downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
+    BLAS.gemm!('T','N',-1.0,A,B,1.0,C)
+
+function inflate!(A::UpperTriangular{Float64})
+    n = Base.LinAlg.chksquare(A)
+    for i in 1:n
+        A[i,i] += 1.
     end
-    d.diag
+    A
 end
 
-function downdate!(d::PDiagMat,m::DenseMatrix{Float64})
-    r,s = size(m)
-    dd = d.diag
-    s == length(dd) == 1 || error("method only make sense for 1 by 1 PDiagMat")
-    dd[1] -= sum(abs2,m)
+inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1. end; D)
+
+inject!(d,s) = copy!(d,s)
+
+function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
+    fill!(d,0.)
+    sd = s.diag
+    for i in eachindex(sd)
+        d[i,i] = sd[i]
+    end
     d
 end
 
-Base.LinAlg.chol!(D::Diagonal) = map!(D.diag,chol!)
-
-Base.copy!(pd::PDiagMat,d::Diagonal{Float64}) = (copy!(pd.diag,d.diag);fill!(pd.inv_diag,NaN);pd)
-
-function Base.copy!(pd::PDMat,d::Diagonal{Float64})
-    size(pd) == size(d) || throw(DimensionMismatch(""))
-    pd.chol.uplo == 'U' || error("improperly formed PDMat, chol should be upper triangular")
-    mm = pd.mat
-    rr = pd.chol.factors
-    fill!(mm,0.)
-    dd = d.diag
-    n = length(dd)
-    for j in 1:n
-        mm[j,j] = dd[j]
-        for i in 1:j
-            rr[i,j] = NaN
-        end
-    end
-    pd
+function Base.logdet(t::UpperTriangular)
+    n = Base.LinAlg.chksquare(t)
+    mapreduce(log,(+),diag(t))
 end
 
-Base.copy!(pd::PDMat,m::DenseMatrix{Float64}) = (copy!(pd.mat,m);pd)
+Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-2])
 
-function Base.copy!(pd::PDiagMat,m::DenseMatrix{Float64})
-    dd = pd.diag
-    di = pd.inv_diag
-    r,s = size(m)
-    r == s == length(dd) && isdiag(m) || throw(DimensionMismatch(""))
-    for j in 1:r
-        dd[j] = m[j,j]
-        di[j] = NaN
-    end
-    pd
+function objective(lmm::LMM)
+    n = Float64(length(lmm.trms[end]))
+    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][1,1])/n))
+end
+
+## objective(m) -> negative twice the log-likelihood
+function objective(m::LinearMixedModel)
+    n,p = size(m)
+    REML = m.REML
+    fn = @compat(Float64(n - (REML ? p : 0)))
+    logdet(m,false) + fn*(1.+log(2π*pwrss(m)/fn)) + (REML ? logdet(m) : 0.)
 end

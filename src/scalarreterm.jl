@@ -99,18 +99,20 @@ lowerbd(t::ScalarReTerm) = zeros(Float64,1)
 
 setpars!(t::ScalarReTerm,x) = (t.λ = convert(Float64,x[1]); t)
 
-function setpars!(t::ScalarReTerm, x, Rii::PDMat)
-    t.λ = convert(Float64,x[1])
-    λsq = abs2(t.λ)
-    rm = fill!(Rii.mat,0.)
-    for j in 1:size(t,2)
-        rm[j,j] *= λsq 
-        rm[j,j] += 1.
+Base.scale!(t::ScalarReTerm,m::Diagonal) = (scale!(t.λ,m.diag); m)
+
+Base.scale!(m::Diagonal,t::ScalarReTerm) = scale!(t,m)
+
+Base.scale!(t::ScalarReTerm, m::AbstractMatrix{Float64}) = scale!(t.λ,m)
+
+function Base.scale!(x::Number,t::UpperTriangular{Float64})
+    m,n = size(t)
+    for j in 1:n, i in 1:j
+        t[i,j] *= x
     end
-    t
 end
 
-Base.scale!(t::ScalarReTerm,v::DenseVecOrMat) = scale!(t.λ, v)
+Base.scale!(m::AbstractMatrix{Float64}, t::ScalarReTerm) = scale!(m,t.λ)
 
 @doc "Solve u := (t't + I)\(t'r)" ->
 pls(t::ScalarReTerm, r::DenseVecOrMat) = PDiagMat(t.plsdiag, t.plsdinv)\(t'r)
