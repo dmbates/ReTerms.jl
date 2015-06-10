@@ -97,15 +97,7 @@ end
 
 lowerbd(t::ScalarReTerm) = zeros(Float64,1)
 
-function setpars!(t::ScalarReTerm, x, Rii::PDiagMat)
-    t.λ = convert(Float64,x[1])
-    λsq = abs2(t.λ)
-    rd = Rii.diag
-    for j in eachindex(rd)
-        rd[j] = λsq * ad[j] + 1.
-    end
-    t
-end
+setpars!(t::ScalarReTerm,x) = (t.λ = convert(Float64,x[1]); t)
 
 function setpars!(t::ScalarReTerm, x, Rii::PDMat)
     t.λ = convert(Float64,x[1])

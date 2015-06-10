@@ -32,7 +32,7 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
             for k in 1:(i - 1)
                 mm += A[k,i]'A[k,i]
             end
-            R[i,i] = isdiag(mm) ? Diagonal(diag(mm)) : full(mm)
+            R[i,i] = isdiag(mm) && size(mm,1) > 1 ? Diagonal(diag(mm)) : full(mm)
         else
             R[i,j] = copy(pr)
         end
@@ -44,36 +44,50 @@ LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
 LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
 LMM(re::Vector,y::Vector) = LMM(ones((length(y),1)),re,y)
 
+## Slightly modified from the version in julia/base/linalg/cholesky.jl
+
+function chol!{T}(A::AbstractMatrix{T}, ::Type{Val{:U}})
+    n = Base.LinAlg.chksquare(A)
+    @inbounds begin
+        for k = 1:n
+            for i = 1:k - 1
+                downdate!(A[k,k],A[i,k])
+            end
+            Akk = chol!(A[k,k], Val{:U})
+            A[k,k] = Akk
+            AkkInv = inv(Akk')
+            for j = k + 1:n
+                for i = 1:k - 1
+                    downdate!(A[k,j],A[i,k],A[i,j])
+                end
+                A[k,j] = AkkInv*A[k,j]
+            end
+        end
+    end
+    return UpperTriangular(A)
+end
+
+chol!(D::Diagonal,::Type{Val{:U}}) = map!(D.diag,chol!)
+
 function setpars!(lmm::LMM,pars::Vector{Float64})
     all(pars .>= lmm.lower) || error("elements of pars violate bounds")
     copy!(lmm.pars,pars)
     gp = lmm.gp
-    A = lmm.A
-    R = lmm.R
-    nt = size(A,2)                      # total number of terms
-    for j in 1:nt, i in 1:j             # initialize R to a copy of A
-        copy!(R[i,j],A[i,j])
-    end
-    ## set parameters in r.e. terms and initialize diagonal blocks of R
+    R = copy!(lmm.R,lmm.A)              # initialize R to a copy of A
+    nt = size(R,2)                      # total number of terms
+    ## set parameters in r.e. terms, scale rows and columns, add identity
     for j in 1:(nt-2)
         tj = lmm.trms[j]
-        setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)),lmm.R[j,j])
-        for jj in (j+1):nt              # scale the jth row by λ
-            scale!(lmm.R[j,jj],tj)
+        setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
+        for jj in j:nt                  # scale the jth row by λ'
+            scale!(tj,R[j,jj])
         end
-        for i in 1:(j-1)                # scale the ith column by λ
-            scale!(lmm.R[i,j],tj)
+        for i in 1:j                    # scale the ith column by λ
+            scale!(tj,R[i,j])
         end
+        R[j,j] += I
     end
-    for j in 1:nt
-        for i in 1:(j-1)
-            downdate!(R[j,j],R[i,j])
-        end
-        factorize!(R[j,j])
-        for jj in (j+1):nt
-            whiten!(R[j,j],R[j,jj])
-        end
-    end
+    chol!(R,Val{:U})
     lmm
 end
 
