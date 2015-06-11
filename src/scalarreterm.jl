@@ -114,57 +114,7 @@ end
 
 Base.scale!(m::AbstractMatrix{Float64}, t::ScalarReTerm) = scale!(m,t.λ)
 
-@doc "Solve u := (t't + I)\(t'r)" ->
-pls(t::ScalarReTerm, r::DenseVecOrMat) = PDiagMat(t.plsdiag, t.plsdinv)\(t'r)
-
-@doc "Solve u := (t't + I)\(t'r) in place" ->
-function pls!(u::DenseVecOrMat, t::ScalarReTerm, r::DenseVecOrMat)
-    scale!(t.plsdinv, Ac_mul_B!(reshape(u,(size(u,1),size(u,2))), t, r))
-end
-
 Base.logdet(t::ScalarReTerm) = sum(Base.LogFun(), t.plsdiag)
-
-function pwrss(t::ScalarReTerm, y)
-    u = pls(t, y)
-    res = sumabs2(u)
-    pred = t * u
-    for i in 1:length(y)
-        res += abs2(y[i] - pred[i])
-    end
-    res
-end
-
-function objective!(t::ScalarReTerm, λ::Float64, r::Vector)
-    setpars!(t,λ)
-    n = size(t, 1)
-    logdet(t) + n * (1.+log(2π * pwrss(t, r)/n))
-end
-
-function PDMats.whiten!(r::DenseVector{Float64}, t::ScalarReTerm, b::DenseVector{Float64})
-    (q = size(t,2)) == length(b) == length(r) || throw(DimensionMismatch(""))
-    for i in eachindex(b)
-        r[i] = sqrt(t.plsdinv[i]) * b[i]
-    end
-    r
-end
-
-PDMats.whiten!(t::ScalarReTerm, b::DenseVector{Float64}) = whiten!(b, t, b)
-
-PDMats.whiten!(r::DenseMatrix{Float64}, t::ScalarReTerm, b::DenseMatrix{Float64}) =
-    broadcast!(*, r, b, sqrt(t.plsdinv))
-
-PDMats.whiten!(t::ScalarReTerm, B::DenseMatrix{Float64}) = whiten!(B, t, B)
-
-function PDMats.whiten!(t::ScalarReTerm, B::SparseMatrixCSC{Float64})
-    (q = size(t,2)) == size(B,1) || throw(DimensionMismatch(""))
-    sc = sqrt(t.plsdinv)
-    bv = B.nzval
-    rv = B.rowval
-    for i in eachindex(bv)
-        bv[i] *= sc[rv[i]]
-    end
-    B
-end
 
 npar(t::ScalarReTerm) = 1
 
