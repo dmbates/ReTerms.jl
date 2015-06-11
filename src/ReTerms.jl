@@ -1,10 +1,10 @@
 module ReTerms
 
-    using DataArrays, PDMats, StatsBase
+    using DataArrays, NLopt, StatsBase
 
     export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
-    export getpars, lowerbd, pls, pls!, reterm, setpars!
+    export getpars, lowerbd, reterm, setpars!
 
     include("sputils.jl")
     include("reterm.jl")
