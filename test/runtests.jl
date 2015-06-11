@@ -1,4 +1,4 @@
-using DataArrays, DataFrames, PDMats, ReTerms
+using DataArrays, DataFrames, ReTerms
 using Base.Test
 
 include(joinpath(dirname(@__FILE__),"data.jl"))
