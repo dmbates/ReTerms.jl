@@ -12,33 +12,27 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     n,p = size(X)
     all(t -> size(t,1) == n, rev) && length(y) == n || throw(DimensionMismatch(""))
     lower = mapreduce(lowerbd,vcat,rev)
-    ntrms = length(rev) + 2
-    trms = Array(Any,ntrms)
+    nt = length(rev) + 1
+    trms = Array(Any,nt)
     for i in eachindex(rev) trms[i] = rev[i] end
-    trms[end-1] = X
-    trms[end] = reshape(convert(Vector{Float64},y),(n,1))
-    A = Array(Any,(ntrms,ntrms))
-    R = Array(Any,(ntrms,ntrms))
-    for j in 1:(ntrms-1),i in (j+1):ntrms # assign lower triangle
-        A[i,j] = R[i,j] = nothing
+    trms[end] = hcat(X,convert(Vector{Float64},y))
+    A = fill!(Array(Any,(nt,nt)),nothing)
+    R = fill!(Array(Any,(nt,nt)),nothing)
+    for j in 1:nt, i in 1:j
+        A[i,j] = densify(trms[i]'trms[j])
+        R[i,j] = copy(A[i,j])
     end
-    for j in 1:ntrms, i in 1:j
-        pr = trms[i]'trms[j]
-        if isdense_ish(pr)
-            pr = full(pr)
+    A[end,end] = UpperTriangular(triu(A[end,end])) # lower-right block is dense, symmetric
+    for j in 2:nt                    # reevaluate diagonal blocks of R
+        R[j,j] = inflate!(UpperTriangular(triu(full(R[j,j]))))
+        for i in 1:(j - 1)
+            downdate!(R[j,j],R[i,j])
         end
-        A[i,j] = pr
-        if i == j
-            mm = A[i,i] + I
-            for k in 1:(i - 1)
-                mm += A[k,i]'A[k,i]
-            end
-            R[i,i] = cfactor!(isdiag(mm) && size(mm,1) > 1 ? Diagonal(diag(mm)) : full(mm))
-        else
-            R[i,j] = copy(pr)
-        end
+        R[j,j] = isdiag(R[j,j]) ? Diagonal(diag(R[j,j])) : R[j,j]
     end
-    LMM(trms,A,R,lower,[x == 0. ? 1. : 0. for x in lower],cumsum(vcat(1,map(npar,rev))),false)
+    pars = [x == 0. ? 1. : 0. for x in lower]
+    LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
+#    setpars!(LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
 end
 
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
@@ -51,12 +45,13 @@ function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
     @inbounds begin
         for k = 1:n
-            for i = 1:k - 1
+            for i = 1:(k - 1)
                 downdate!(A[k,k],A[i,k])
             end
             cfactor!(A[k,k])
-            for j = k + 1:n
-                for i = 1:k - 1
+            for j = (k + 1):n
+                for i = 1:(k - 1)
+                    @show i,j,k,typeof(A[k,j]),typeof(A[i,k]),typeof(A[i,j])
                     downdate!(A[k,j],A[i,k],A[i,j])
                 end
                 Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
@@ -66,10 +61,9 @@ function cfactor!(A::AbstractMatrix)
     return UpperTriangular(A)
 end
 
-cfactor!(A::DenseMatrix{Float64}) = Base.LinAlg.chol!(A)
 cfactor!(x::Number) = sqrt(real(x))
 cfactor!(D::Diagonal) = (map!(cfactor!,D.diag); D)
-cfactor!(t::UpperTriangular{Float64}) = Base.LinAlg.chol!(t.data,Val{:U})
+cfactor!(U::UpperTriangular{Float64}) = Base.LinAlg.chol!(U.data,Val{:U})
 
 @doc "Subtract, in place, A'A or A'B from C"->
 downdate!(C::UpperTriangular{Float64},A::DenseMatrix{Float64}) =
@@ -98,7 +92,17 @@ function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::
         C[j,jj] -= nz[k]*B[rv[k],jj]
     end
 end
-
+function downdate!(C::UpperTriangular,A::SparseMatrixCSC)
+    (n = size(C,2)) == size(A,2) || throw(DimensionMismatch(""))
+    pr = triu(A'A)
+    nz = nonzeros(pr)
+    rv = rowvals(pr)
+    for j in 1:n, k in nzrange(pr,j)
+        C[rv[k],j] -= nz[k]
+    end
+    C
+end
+    
 @doc "`fit(m)` -> m Optimize the objective using an NLopt optimizer"->
 function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     m.fit && return m
@@ -168,6 +172,7 @@ hasgrad(lmm::LMM) = false
 
 @doc "Add an identity matrix to the argument, in place"->
 inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1. end; D)
+inflate!(A::DenseMatrix{Float64}) = inflate!(UpperTriangular(A))
 function inflate!(A::UpperTriangular{Float64})
     n = Base.LinAlg.chksquare(A)
     for i in 1:n
@@ -178,6 +183,13 @@ end
 
 @doc "`copy!` allowing for heterogeneous matrix types"
 inject!(d,s) = copy!(d,s)
+function inject!(d::UpperTriangular,s::UpperTriangular)
+    (n = size(s,2)) == size(d,2) || throw(DimensionMismatch(""))
+    for j in 1:n, i in 1:j
+        d[i,j] = s[i,j]
+    end
+    d
+end
 function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
     fill!(d,0.)
     sd = s.diag
@@ -187,14 +199,14 @@ function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
     d
 end
 
-Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-2])
+Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-1])
 
 lower(lmm::LMM) = lmm.lower
 
 @doc "Negative twice the log-likelihood"
 function objective(lmm::LMM)
-    n = Float64(length(lmm.trms[end]))
-    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][1,1])/n))
+    n = size(lmm.trms[1],1)
+    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][end,end])/n))
 end
 
 @doc "Install new parameter values.  Update `trms` and the Cholesky factor `R`"->
@@ -209,7 +221,7 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
         inject!(R[i,j],A[i,j])
     end
     ## set parameters in r.e. terms, scale rows and columns, add identity
-    for j in 1:(nt-2)
+    for j in 1:(nt-1)
         tj = lmm.trms[j]
         setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
         for jj in j:nt                  # scale the jth row by λ'
