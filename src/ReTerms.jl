@@ -1,6 +1,6 @@
 module ReTerms
 
-    using DataArrays, NLopt, StatsBase
+    using DataArrays, DataFrames, NLopt, StatsBase
 
     export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 

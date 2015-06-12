@@ -38,6 +38,7 @@ end
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
 LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
 LMM(re::Vector,y::Vector) = LMM(ones((length(y),1)),re,y)
+LMM(re::Vector{Symbol},y::Symbol,df::DataFrame) = LMM([reterm(df[s]) for s in re],df[y])
 
 ## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
 
