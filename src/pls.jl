@@ -52,7 +52,6 @@ function cfactor!(A::AbstractMatrix)
             cfactor!(A[k,k])
             for j = (k + 1):n
                 for i = 1:(k - 1)
-                    @show i,j,k,typeof(A[k,j]),typeof(A[i,k]),typeof(A[i,j])
                     downdate!(A[k,j],A[i,k],A[i,j])
                 end
                 Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
