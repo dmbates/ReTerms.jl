@@ -6,3 +6,5 @@ function StatsBase.counts{T<:FloatingPoint}(x::ReTerm{T},y::ReTerm{T})
 end
 
 reterm(p::PooledDataVector) = ScalarReTerm(p,ones(length(p)))
+
+reterm{T<:Integer}(v::Vector{T}) = ScalarReTerm(compact(pool(v)),ones(length(v)))

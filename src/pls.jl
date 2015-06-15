@@ -38,7 +38,7 @@ end
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
 LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
 LMM(re::Vector,y::Vector) = LMM(ones((length(y),1)),re,y)
-LMM(re::Vector{Symbol},y::Symbol,df::DataFrame) = LMM([reterm(df[s]) for s in re],df[y])
+LMM(re::Vector{Symbol},y::Symbol,df) = LMM([reterm(df[s]) for s in re],df[y])
 
 ## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
 
@@ -46,14 +46,18 @@ function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
     @inbounds begin
         for k = 1:n
+            @show k
             for i = 1:(k - 1)
+                @show k,i
                 downdate!(A[k,k],A[i,k])
             end
             cfactor!(A[k,k])
             for j = (k + 1):n
                 for i = 1:(k - 1)
+                    @show k,j,i
                     downdate!(A[k,j],A[i,k],A[i,j])
                 end
+                @show k,j
                 Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
             end
         end
@@ -185,16 +189,43 @@ end
 inject!(d,s) = copy!(d,s)
 function inject!(d::UpperTriangular,s::UpperTriangular)
     (n = size(s,2)) == size(d,2) || throw(DimensionMismatch(""))
-    for j in 1:n, i in 1:j
+    @inbounds for j in 1:n, i in 1:j
         d[i,j] = s[i,j]
     end
     d
 end
 function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
-    fill!(d,0.)
     sd = s.diag
-    for i in eachindex(sd)
+    length(sd) == size(d,2) || throw(DimensionMismatch(""))
+    fill!(d,0.)
+    @inbounds for i in eachindex(sd)
         d[i,i] = sd[i]
+    end
+    d
+end
+function inject!(d::Diagonal{Float64},s::Diagonal{Float64})
+    size(s,2) == size(d,2) || throw(DimensionMismatch(""))
+    copy!(d.diag,s.diag)
+end
+function inject!(d::SparseMatrixCSC{Float64},s::SparseMatrixCSC{Float64})
+    m,n = size(d)
+    size(d) == size(s) || throw(DimensionMismatch(""))
+    drv = rowvals(d); srv = rowvals(s); dnz = nonzeros(d); snz = nonzeros(s)
+    fill!(dnz,0.)
+    for j in 1:n
+        dnzr = nzrange(d,j)
+        dnzrv = sub(drv,dnzr)
+        snzr = nzrange(s,j)
+        if length(snzr) == length(dnzr) && all(dnzrv .== sub(srv,snzr))
+            copy!(sub(dnz,dnzr),sub(snz,snzr))
+        else
+            for k in snzr
+                ssr = srv[k]
+                kk = searchsortedfirst(dnzrv,ssr)
+                kk > length(dnzrv) || dnzrv[kk] != ssr || error("cannot inject sparse s into sparse d")
+                dnz[dnzr[kk]] = snz[k]
+            end
+        end
     end
     d
 end
