@@ -1,12 +1,12 @@
 module ReTerms
 
-    using DataArrays, DataFrames, NLopt, StatsBase
+    using DataArrays, DataFrames, HDF5, NLopt, StatsBase
 
     export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
 
-    export getpars, lowerbd, reterm, setpars!
+    export g2dict, getpars, lowerbd, objective, reterm, setpars!
 
-    include("sputils.jl")
+    include("utils.jl")
     include("reterm.jl")
     include("scalarreterm.jl")
     include("vectorreterm.jl")
