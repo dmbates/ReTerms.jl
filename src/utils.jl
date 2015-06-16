@@ -21,3 +21,13 @@ Convert sparse to dense if the proportion of nonzeros exceeds a threshold.
 A no-op for other matrix types.
 """->
 densify(S,threshold=0.3) = issparse(S) && nnz(S)/(*(size(S)...)) > threshold ? full(S) : S
+
+@doc """Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""->
+function g2dict(fid::HDF5File,gnm)
+    res = Dict{Symbol,Any}()
+    g = fid[gnm]
+    for nm in names(g)
+        res[Symbol(nm)] = readmmap(g[nm])
+    end
+    res
+end
