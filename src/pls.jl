@@ -1,7 +1,7 @@
 type LMM <: StatsBase.RegressionModel
     trms::Vector{Any}
     A::Matrix{Any}   # symmetric cross-product blocks (lower triangle)
-    L::Matrix{Any}   # left Cholesky factor in blocks.
+    L::LowerTriangular          # left Cholesky factor in blocks.
     lower::Vector{Float64}      # vector of lower bounds on parameters
     pars::Vector{Float64}       # current parameter vector
     gp::Vector
@@ -15,37 +15,36 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     nt = length(rev) + 1
     trms = Array(Any,nt)
     for i in eachindex(rev) trms[i] = rev[i] end
-    trms[end] = hcat(X,convert(Vector{Float64},y))
+    trms[end] = hcat(X,y)
     A = fill!(Array(Any,(nt,nt)),nothing)
-    L = fill!(Array(Any,(nt,nt)),nothing)
+    L = LowerTriangular(fill!(Array(Any,(nt,nt)),nothing))
     for j in 1:nt, i in j:nt
         A[i,j] = densify(trms[i]'trms[j])
         @show i,j,size(A[i,j]),typeof(A[i,j])
     end
     for i in 1:nt # simple approach - first column is sparse, others cols are dense
         L[i,1] = copy(A[i,1])
+        @show i,size(L[i,1]),typeof(L[i,1])
     end
     for k in 2:nt
         L[k,k] = inflate!(LowerTriangular(tril(full(copy(A[k,k])))))
-        for j in 1:(k-1)
-            downdate!(L[k,k],L[k,j])
-        end
-        if isdiag(L[k,k]) # factor k is nested in previous factors
-            L[k,k] = Diagonal(diag(L[k,k]))
-            for i in (k + 1):nt
-                L[i,k] = copy(A[i,k])
-            end
-        else
+        @show k,typeof(L[k,k])
+        ## if isdiag(L[k,k]) # factor k is nested in previous factors
+        ##     L[k,k] = Diagonal(diag(L[k,k]))
+        ##     for i in (k + 1):nt
+        ##         L[i,k] = copy(A[i,k])
+        ##     end
+        ## else
             for i in (k + 1):nt
                 L[i,k] = full(copy(A[i,k]))
+                @show i,k,typeof(L[i,k])
             end
-        end
-        @show k,typeof(L[k,k])
-        for j in (k + 1):nt
-            for i in 1:(k-1)
-                downdate!(L[k,j],L[i,k],L[i,j])
-            end
-        end
+        ## end
+        ## for j in (k + 1):nt
+        ##     for i in 1:(k-1)
+        ##         downdate!(L[k,j],L[i,k],L[i,j])
+        ##     end
+        ## end
     end
     A[end,end] = LowerTriangular(tril(A[end,end]))
     pars = [x == 0. ? 1. : 0. for x in lower]
@@ -55,7 +54,7 @@ end
 
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
 LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
-LMM(re::Vector,y::Vector) = LMM(ones((length(y),1)),re,y)
+LMM(re::Vector,y::Vector) = LMM(ones(length(y),1),re,y)
 LMM(re::Vector{Symbol},y::Symbol,df) = LMM([reterm(df[s]) for s in re],df[y])
 
 ## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
@@ -221,10 +220,10 @@ end
 
 @doc "`copy!` allowing for heterogeneous matrix types"
 inject!(d,s) = copy!(d,s)
-function inject!(d::UpperTriangular,s::UpperTriangular)
+function inject!(d::LowerTriangular,s::LowerTriangular)
     (n = size(s,2)) == size(d,2) || throw(DimensionMismatch(""))
-    @inbounds for j in 1:n, i in 1:j
-        d[i,j] = s[i,j]
+    for j in 1:n
+        copy!(sub(d,j:n,j),sub(s,j:n,j))
     end
     d
 end
@@ -237,13 +236,14 @@ function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
     end
     d
 end
-function inject!(d::Diagonal{Float64},s::Diagonal{Float64})
-    size(s,2) == size(d,2) || throw(DimensionMismatch(""))
-    copy!(d.diag,s.diag)
-end
+inject!(d::Diagonal{Float64},s::Diagonal{Float64}) = (copy!(d.diag,s.diag);d)
 function inject!(d::SparseMatrixCSC{Float64},s::SparseMatrixCSC{Float64})
     m,n = size(d)
     size(d) == size(s) || throw(DimensionMismatch(""))
+    if nnz(d) == nnz(s)
+        copy!(nonzeros(d),nonzeros(s))
+        return d
+    end
     drv = rowvals(d); srv = rowvals(s); dnz = nonzeros(d); snz = nonzeros(s)
     fill!(dnz,0.)
     for j in 1:n
@@ -282,22 +282,23 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
     nt = length(lmm.trms)               # number of terms
     L = lmm.L
     A = lmm.A
-    for j in 1:nt, i in 1:j
+    for j in 1:nt, i in j:nt
         inject!(L[i,j],A[i,j])
     end
     ## set parameters in r.e. terms, scale rows and columns, add identity
     for j in 1:(nt-1)
         tj = lmm.trms[j]
         setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
-        for jj in j:nt                  # scale the jth row by λ'
-            scale!(tj,L[j,jj])
+        for i in j:nt                   # scale the jth column by λ'
+            @show i,j,typeof(L[i,j])
+            scale!(L[i,j],tj)
         end
-        for i in 1:j                    # scale the ith column by λ
-            scale!(tj,L[i,j])
+        for jj in 1:j                   # scale the jth row by λ
+            scale!(tj,L[j,jj])
         end
         inflate!(L[j,j])                # L[j,j] += I
     end
-    cfactor!(L)
+#    cfactor!(L)
     lmm
 end
 

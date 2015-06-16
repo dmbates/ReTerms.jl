@@ -44,13 +44,15 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, t::ScalarReTerm, v::DenseVecOrMat)
     k = size(v,2)
     size(r,1) == q && size(v,1) == n && size(r,2) == k || throw(DimensionMismatch(""))
     fill!(r,zero(eltype(r)))
-    if k == 1
+    rr = t.f.refs
+    zz = t.z
+    if k == n1
         for i in 1:n
-            @inbounds r[t.f.refs[i]] += v[i] * t.z[i]
+            @inbounds r[rr[i]] += v[i] * zz[i]
         end
     else
         for j in 1:k, i in 1:n
-            @inbounds r[t.f.refs[i],j] += v[i,j] * t.z[i]
+            @inbounds r[rr[i],j] += v[i,j] * zz[i]
         end
     end
     scale!(r,t.λ)
@@ -60,8 +62,6 @@ function Base.Ac_mul_B(t::ScalarReTerm, v::DenseVecOrMat{Float64})
     k = size(t,2)
     Ac_mul_B!(Array(Float64, isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
 end
-
-
 
 function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
     n,q = size(t)
@@ -75,16 +75,15 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
             @inbounds r[rr[i]] += v[i] * zz[i]
         end
     else
-        for j in 1:k, i in 1:n
-            @inbounds r[j,rr[i]] += v[i,j] * zz[i]
+        for j in 1:n
+            BLAS.axpy!(zz[j],sub(v,j,:),sub(r,:,Int(rr[j])))
         end
     end
-    scale!(r,t.λ)
+    t.λ == 1 ? r : scale!(r,t.λ)
 end
 
 Base.Ac_mul_B(v::DenseVecOrMat{Float64},t::ScalarReTerm) =
     Ac_mul_B!(Array(Float64,(size(v,2),size(t,2))), v, t)
-
 
 function Base.Ac_mul_B(t::ScalarReTerm, s::ScalarReTerm)
     if is(s,t)
@@ -112,11 +111,18 @@ Base.scale!(t::ScalarReTerm, m::AbstractMatrix{Float64}) = scale!(t.λ,m)
 function Base.scale!(x::Number,t::UpperTriangular{Float64})
     m,n = size(t)
     for j in 1:n, i in 1:j
-        t[i,j] *= x
+        @inbounds t[i,j] *= x
     end
 end
+function Base.scale!{T<:Number}(s::T,t::LowerTriangular{T})
+    m,n = size(t)
+    for j in 1:n, i in j:m
+        @inbounds t[i,j] *= s
+    end
+    t
+end
 
-Base.scale!(m::AbstractMatrix{Float64}, t::ScalarReTerm) = scale!(m,t.λ)
+Base.scale!(m::AbstractMatrix{Float64}, t::ScalarReTerm) = scale!(t.λ,m)
 
 Base.logdet(t::ScalarReTerm) = sum(Base.LogFun(), t.plsdiag)
 
