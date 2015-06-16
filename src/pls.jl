@@ -19,17 +19,33 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     A = fill!(Array(Any,(nt,nt)),nothing)
     R = fill!(Array(Any,(nt,nt)),nothing)
     for j in 1:nt, i in 1:j
-        A[i,j] = densify(trms[i]'trms[j])
-        R[i,j] = copy(A[i,j])
+            A[i,j] = densify(trms[i]'trms[j])
     end
-    A[end,end] = UpperTriangular(triu(A[end,end])) # lower-right block is dense, symmetric
-    for j in 2:nt                    # reevaluate diagonal blocks of R
-        R[j,j] = inflate!(UpperTriangular(triu(full(R[j,j]))))
-        for i in 1:(j - 1)
-            downdate!(R[j,j],R[i,j])
+    for j in 1:nt # simple approach - first row is sparse, others rows are dense
+        R[1,j] = copy(A[1,j])
+    end
+    for k in 2:nt
+        R[k,k] = inflate!(UpperTriangular(triu(full(copy(A[k,k])))))
+        for i in 1:(k - 1)
+            downdate!(R[k,k],R[i,k])
         end
-        R[j,j] = isdiag(R[j,j]) ? Diagonal(diag(R[j,j])) : R[j,j]
+        if isdiag(R[k,k]) # factor k is nested in previous factors
+            R[k,k] = Diagonal(diag(R[k,k]))
+            for j in (k + 1):nt
+                R[k,j] = copy(A[k,j])
+            end
+        else
+            for j in (k + 1):nt
+                R[k,j] = full(copy(A[k,j]))
+            end
+        end
+        for j in (k + 1):nt
+            for i in 1:(k-1)
+                downdate!(R[k,j],R[i,k],R[i,j])
+            end
+        end
     end
+    A[end,end] = UpperTriangular(triu(A[end,end]))
     pars = [x == 0. ? 1. : 0. for x in lower]
     LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
 #    setpars!(LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
@@ -46,18 +62,14 @@ function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
     @inbounds begin
         for k = 1:n
-            @show k
             for i = 1:(k - 1)
-                @show k,i
                 downdate!(A[k,k],A[i,k])
             end
             cfactor!(A[k,k])
             for j = (k + 1):n
                 for i = 1:(k - 1)
-                    @show k,j,i
                     downdate!(A[k,j],A[i,k],A[i,j])
                 end
-                @show k,j
                 Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
             end
         end
@@ -96,7 +108,7 @@ function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::
         C[j,jj] -= nz[k]*B[rv[k],jj]
     end
 end
-function downdate!(C::UpperTriangular,A::SparseMatrixCSC)
+function downdate!(C::UpperTriangular,A::SparseMatrixCSC) 
     (n = size(C,2)) == size(A,2) || throw(DimensionMismatch(""))
     pr = triu(A'A)
     nz = nonzeros(pr)
@@ -106,7 +118,28 @@ function downdate!(C::UpperTriangular,A::SparseMatrixCSC)
     end
     C
 end
-    
+function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
+    ma,na = size(A)
+    mb,nb = size(B)
+    na == size(C,1) && nb == size(C,2) && ma == mb || throw(DimensionMismatch(""))
+    cpa = A.colptr; rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
+    for j in 1:nb
+        for i in 1:na
+            rra = sub(rva,nzrange(A,i))
+            ca = cpa[i]
+            for kb in nzrange(B,j)
+                rb = rvb[kb]
+                kka = searchsortedfirst(rra, rb)
+                if kka > length(rra) || rra[kka] != rb
+                    break
+                end
+                C[i,j] -= nza[ca + kka - 1] * nzb[kb]
+            end
+        end                                     
+    end
+    C
+end
+
 @doc "`fit(m)` -> m Optimize the objective using an NLopt optimizer"->
 function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     m.fit && return m

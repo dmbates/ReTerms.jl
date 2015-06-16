@@ -61,6 +61,8 @@ function Base.Ac_mul_B(t::ScalarReTerm, v::DenseVecOrMat{Float64})
     Ac_mul_B!(Array(Float64, isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
 end
 
+
+
 function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
     n,q = size(t)
     k = size(v,2)
