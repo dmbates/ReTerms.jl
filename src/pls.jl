@@ -1,9 +1,9 @@
 type LMM <: StatsBase.RegressionModel
     trms::Vector{Any}
-    A::Matrix{Any}
-    R::Matrix{Any}
-    lower::Vector{Float64}              # vector of lower bounds on parameters
-    pars::Vector{Float64}               # current parameter vector
+    A::Matrix{Any}   # symmetric cross-product blocks (lower triangle)
+    L::Matrix{Any}   # left Cholesky factor in blocks.
+    lower::Vector{Float64}      # vector of lower bounds on parameters
+    pars::Vector{Float64}       # current parameter vector
     gp::Vector
     fit::Bool
 end
@@ -18,37 +18,37 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     trms[end] = hcat(X,convert(Vector{Float64},y))
     A = fill!(Array(Any,(nt,nt)),nothing)
     R = fill!(Array(Any,(nt,nt)),nothing)
-    for j in 1:nt, i in 1:j
-            A[i,j] = densify(trms[i]'trms[j])
+    for j in 1:nt, i in (j+1):nt
+        A[i,j] = densify(trms[i]'trms[j])
     end
-    for j in 1:nt # simple approach - first row is sparse, others rows are dense
-        R[1,j] = copy(A[1,j])
+    for i in 1:nt # simple approach - first column is sparse, others cols are dense
+        L[1,j] = copy(A[i,1])
     end
     for k in 2:nt
-        R[k,k] = inflate!(UpperTriangular(triu(full(copy(A[k,k])))))
+        L[k,k] = inflate!(LowerTriangular(tril(full(copy(A[k,k])))))
         for i in 1:(k - 1)
-            downdate!(R[k,k],R[i,k])
+            downdate!(L[k,k],L[i,k])
         end
-        if isdiag(R[k,k]) # factor k is nested in previous factors
-            R[k,k] = Diagonal(diag(R[k,k]))
+        if isdiag(L[k,k]) # factor k is nested in previous factors
+            L[k,k] = Diagonal(diag(L[k,k]))
             for j in (k + 1):nt
-                R[k,j] = copy(A[k,j])
+                L[k,j] = copy(A[k,j])
             end
         else
             for j in (k + 1):nt
-                R[k,j] = full(copy(A[k,j]))
+                L[k,j] = full(copy(A[k,j]))
             end
         end
         for j in (k + 1):nt
             for i in 1:(k-1)
-                downdate!(R[k,j],R[i,k],R[i,j])
+                downdate!(L[k,j],L[i,k],L[i,j])
             end
         end
     end
     A[end,end] = UpperTriangular(triu(A[end,end]))
     pars = [x == 0. ? 1. : 0. for x in lower]
-    LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
-#    setpars!(LMM(trms,A,R,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
+    LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
+#    setpars!(LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
 end
 
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
@@ -263,40 +263,40 @@ function inject!(d::SparseMatrixCSC{Float64},s::SparseMatrixCSC{Float64})
     d
 end
 
-Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-1])
+Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.L)[1:end-1])
 
 lower(lmm::LMM) = lmm.lower
 
 @doc "Negative twice the log-likelihood"
 function objective(lmm::LMM)
     n = size(lmm.trms[1],1)
-    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][end,end])/n))
+    logdet(lmm) + n*(1.+log(2π*abs2(lmm.L[end,end][end,end])/n))
 end
 
-@doc "Install new parameter values.  Update `trms` and the Cholesky factor `R`"->
+@doc "Install new parameter values.  Update `trms` and the Cholesky factor `L`"->
 function setpars!(lmm::LMM,pars::Vector{Float64})
     all(pars .>= lmm.lower) || error("elements of pars violate bounds")
     copy!(lmm.pars,pars)
     gp = lmm.gp
     nt = length(lmm.trms)               # number of terms
-    R = lmm.R
+    L = lmm.L
     A = lmm.A
     for j in 1:nt, i in 1:j
-        inject!(R[i,j],A[i,j])
+        inject!(L[i,j],A[i,j])
     end
     ## set parameters in r.e. terms, scale rows and columns, add identity
     for j in 1:(nt-1)
         tj = lmm.trms[j]
         setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
         for jj in j:nt                  # scale the jth row by λ'
-            scale!(tj,R[j,jj])
+            scale!(tj,L[j,jj])
         end
         for i in 1:j                    # scale the ith column by λ
-            scale!(tj,R[i,j])
+            scale!(tj,L[i,j])
         end
-        inflate!(R[j,j])                # R[j,j] += I
+        inflate!(L[j,j])                # L[j,j] += I
     end
-    cfactor!(R)
+    cfactor!(L)
     lmm
 end
 
