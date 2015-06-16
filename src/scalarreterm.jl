@@ -68,13 +68,15 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
     k = size(v,2)
     size(r,2) == q && size(v,1) == n && size(r,1) == k || throw(DimensionMismatch(""))
     fill!(r, zero(eltype(r)))
+    rr = t.f.refs
+    zz = t.z
     if k == 1
         for i in 1:n
-            @inbounds r[t.f.refs[i]] += v[i] * t.z[i]
+            @inbounds r[rr[i]] += v[i] * zz[i]
         end
     else
         for j in 1:k, i in 1:n
-            @inbounds r[j,t.f.refs[i]] += v[i,j] * t.z[i]
+            @inbounds r[j,rr[i]] += v[i,j] * zz[i]
         end
     end
     scale!(r,t.λ)

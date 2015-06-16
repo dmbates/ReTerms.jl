@@ -17,35 +17,37 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     for i in eachindex(rev) trms[i] = rev[i] end
     trms[end] = hcat(X,convert(Vector{Float64},y))
     A = fill!(Array(Any,(nt,nt)),nothing)
-    R = fill!(Array(Any,(nt,nt)),nothing)
-    for j in 1:nt, i in (j+1):nt
+    L = fill!(Array(Any,(nt,nt)),nothing)
+    for j in 1:nt, i in j:nt
         A[i,j] = densify(trms[i]'trms[j])
+        @show i,j,size(A[i,j]),typeof(A[i,j])
     end
     for i in 1:nt # simple approach - first column is sparse, others cols are dense
-        L[1,j] = copy(A[i,1])
+        L[i,1] = copy(A[i,1])
     end
     for k in 2:nt
         L[k,k] = inflate!(LowerTriangular(tril(full(copy(A[k,k])))))
-        for i in 1:(k - 1)
-            downdate!(L[k,k],L[i,k])
+        for j in 1:(k-1)
+            downdate!(L[k,k],L[k,j])
         end
         if isdiag(L[k,k]) # factor k is nested in previous factors
             L[k,k] = Diagonal(diag(L[k,k]))
-            for j in (k + 1):nt
-                L[k,j] = copy(A[k,j])
+            for i in (k + 1):nt
+                L[i,k] = copy(A[i,k])
             end
         else
-            for j in (k + 1):nt
-                L[k,j] = full(copy(A[k,j]))
+            for i in (k + 1):nt
+                L[i,k] = full(copy(A[i,k]))
             end
         end
+        @show k,typeof(L[k,k])
         for j in (k + 1):nt
             for i in 1:(k-1)
                 downdate!(L[k,j],L[i,k],L[i,j])
             end
         end
     end
-    A[end,end] = UpperTriangular(triu(A[end,end]))
+    A[end,end] = LowerTriangular(tril(A[end,end]))
     pars = [x == 0. ? 1. : 0. for x in lower]
     LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
 #    setpars!(LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
@@ -62,28 +64,28 @@ function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
     @inbounds begin
         for k = 1:n
-            for i = 1:(k - 1)
-                downdate!(A[k,k],A[i,k])
+            for j in 1:(k - 1)
+                downdate!(A[k,k],A[k,i])
             end
             cfactor!(A[k,k])
-            for j = (k + 1):n
-                for i = 1:(k - 1)
-                    downdate!(A[k,j],A[i,k],A[i,j])
+            for j = 1:k
+                for i = (k + 1):n
+                    downdate!(A[i,k],A[i,k],A[i,j])
                 end
-                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
+                Base.LinAlg.A_rdiv_Bc!(A[k,k],A[k,j])
             end
         end
     end
-    return UpperTriangular(A)
+    return LowerTriangular(A)
 end
 
 cfactor!(x::Number) = sqrt(real(x))
 cfactor!(D::Diagonal) = (map!(cfactor!,D.diag); D)
-cfactor!(U::UpperTriangular{Float64}) = Base.LinAlg.chol!(U.data,Val{:U})
+cfactor!(L::LowerTriangular{Float64}) = Base.LinAlg.chol!(L.data,Val{:L})
 
 @doc "Subtract, in place, A'A or A'B from C"->
-downdate!(C::UpperTriangular{Float64},A::DenseMatrix{Float64}) =
-    BLAS.syrk!('U','T',-1.0,A,1.0,C.data)
+downdate!(C::LowerTriangular{Float64},A::DenseMatrix{Float64}) =
+    BLAS.syrk!('L','T',-1.0,A,1.0,C.data)
 downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
     BLAS.gemm!('T','N',-1.0,A,B,1.0,C)
 function downdate!{T<:FloatingPoint}(C::Diagonal{T},A::SparseMatrixCSC{T})
@@ -108,9 +110,9 @@ function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::
         C[j,jj] -= nz[k]*B[rv[k],jj]
     end
 end
-function downdate!(C::UpperTriangular,A::SparseMatrixCSC) 
-    (n = size(C,2)) == size(A,2) || throw(DimensionMismatch(""))
-    pr = triu(A'A)
+function downdate!(C::LowerTriangular,A::SparseMatrixCSC) 
+    (n = size(C,2)) == size(A,1) || throw(DimensionMismatch(""))
+    pr = tril(A'A)
     nz = nonzeros(pr)
     rv = rowvals(pr)
     for j in 1:n, k in nzrange(pr,j)
@@ -209,11 +211,10 @@ hasgrad(lmm::LMM) = false
 
 @doc "Add an identity matrix to the argument, in place"->
 inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1. end; D)
-inflate!(A::DenseMatrix{Float64}) = inflate!(UpperTriangular(A))
-function inflate!(A::UpperTriangular{Float64})
+function inflate!(A::LowerTriangular{Float64})
     n = Base.LinAlg.chksquare(A)
     for i in 1:n
-        A[i,i] += 1.
+        @inbounds A[i,i] += 1.
     end
     A
 end
