@@ -20,15 +20,12 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     L = LowerTriangular(fill!(Array(Any,(nt,nt)),nothing))
     for j in 1:nt, i in j:nt
         A[i,j] = densify(trms[i]'trms[j])
-        @show i,j,size(A[i,j]),typeof(A[i,j])
     end
-    for i in 1:nt # simple approach - first column is sparse, others cols are dense
+    for i in 1:nt              # first col is sparse, others are dense
         L[i,1] = copy(A[i,1])
-        @show i,size(L[i,1]),typeof(L[i,1])
     end
     for k in 2:nt
-        L[k,k] = inflate!(LowerTriangular(tril(full(copy(A[k,k])))))
-        @show k,typeof(L[k,k])
+        L[k,k] = LowerTriangular(tril(full(copy(A[k,k]))))
         ## if isdiag(L[k,k]) # factor k is nested in previous factors
         ##     L[k,k] = Diagonal(diag(L[k,k]))
         ##     for i in (k + 1):nt
@@ -37,7 +34,6 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
         ## else
             for i in (k + 1):nt
                 L[i,k] = full(copy(A[i,k]))
-                @show i,k,typeof(L[i,k])
             end
         ## end
         ## for j in (k + 1):nt
@@ -48,8 +44,8 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
     end
     A[end,end] = LowerTriangular(tril(A[end,end]))
     pars = [x == 0. ? 1. : 0. for x in lower]
-    LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
-#    setpars!(LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
+#    LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
+    setpars!(LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
 end
 
 LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
@@ -64,14 +60,14 @@ function cfactor!(A::AbstractMatrix)
     @inbounds begin
         for k = 1:n
             for j in 1:(k - 1)
-                downdate!(A[k,k],A[k,i])
+                downdate!(A[k,k],A[k,j])  # A[k,k] -= A[k,j]*A[k,j]'
             end
-            cfactor!(A[k,k])
-            for j = 1:k
-                for i = (k + 1):n
-                    downdate!(A[i,k],A[i,k],A[i,j])
+            cfactor!(A[k,k])   # (lower) Cholesky factor of A[k,k]
+            for i in (k + 1):n
+                for j in 1:(k - 1)
+                    downdate!(A[i,k],A[i,j],A[k,j]) # A[i,k] -= A[i,j]*A[k,j]
                 end
-                Base.LinAlg.A_rdiv_Bc!(A[k,k],A[k,j])
+                Base.LinAlg.A_rdiv_Bc!(A[i,k],A[k,k])
             end
         end
     end
@@ -82,11 +78,11 @@ cfactor!(x::Number) = sqrt(real(x))
 cfactor!(D::Diagonal) = (map!(cfactor!,D.diag); D)
 cfactor!(L::LowerTriangular{Float64}) = Base.LinAlg.chol!(L.data,Val{:L})
 
-@doc "Subtract, in place, A'A or A'B from C"->
+@doc "Subtract, in place, AA' or AB' from C"->
 downdate!(C::LowerTriangular{Float64},A::DenseMatrix{Float64}) =
-    BLAS.syrk!('L','T',-1.0,A,1.0,C.data)
+    BLAS.syrk!('L','N',-1.0,A,1.0,C.data)
 downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
-    BLAS.gemm!('T','N',-1.0,A,B,1.0,C)
+    BLAS.gemm!('N','T',-1.0,A,B,1.0,C)
 function downdate!{T<:FloatingPoint}(C::Diagonal{T},A::SparseMatrixCSC{T})
     m,n = size(A)
     dd = C.diag
@@ -94,7 +90,7 @@ function downdate!{T<:FloatingPoint}(C::Diagonal{T},A::SparseMatrixCSC{T})
     nz = nonzeros(A)
     for j in eachindex(dd)
         for k in nzrange(A,j)
-            dd[j] -= abs2(nz[k])
+            @inbounds dd[j] -= abs2(nz[k])
         end
     end
     C
@@ -110,33 +106,55 @@ function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::
     end
 end
 function downdate!(C::LowerTriangular,A::SparseMatrixCSC) 
-    (n = size(C,2)) == size(A,1) || throw(DimensionMismatch(""))
-    pr = tril(A'A)
-    nz = nonzeros(pr)
-    rv = rowvals(pr)
-    for j in 1:n, k in nzrange(pr,j)
-        C[rv[k],j] -= nz[k]
+    m,n = size(A)
+    m == size(A,1) || throw(DimensionMismatch(""))
+    rv = rowvals(A)
+    nz = nonzeros(A)
+    for j in 1:n
+        inds = nzrange(A,j)
+        rvj = sub(rv,inds)
+        nzj = sub(nz,inds)
+        for k in eachindex(inds), i in k:length(inds)
+            @inbounds C[rvj[i],rvj[k]] -= nzj[i]*nzj[k]
+        end
     end
     C
 end
 function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
     ma,na = size(A)
     mb,nb = size(B)
-    na == size(C,1) && nb == size(C,2) && ma == mb || throw(DimensionMismatch(""))
-    cpa = A.colptr; rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
+    ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
+    rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
     for j in 1:nb
-        for i in 1:na
-            rra = sub(rva,nzrange(A,i))
-            ca = cpa[i]
-            for kb in nzrange(B,j)
-                rb = rvb[kb]
-                kka = searchsortedfirst(rra, rb)
-                if kka > length(rra) || rra[kka] != rb
-                    break
-                end
-                C[i,j] -= nza[ca + kka - 1] * nzb[kb]
+        ia = nzrange(A,j)
+        ib = nzrange(B,j)
+        rvaj = sub(rva,ia)
+        rvbj = sub(rvb,ib)
+        nzaj = sub(nza,ia)
+        nzbj = sub(nzb,ib)
+        for k in eachindex(ib)
+            krv = rvbj[k]
+            knz = nzbj[k]
+            for i in eachindex(ia)
+                C[rvaj[i],krv] -= nzaj[i]*knz
             end
         end                                     
+    end
+    C
+end
+function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T})
+    ma,na = size(A)
+    mb,nb = size(B)
+    ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
+    rvb = rowvals(B); nzb = nonzeros(B)
+    for j in 1:nb
+        raj = sub(A,:,j)
+        ib = nzrange(B,j)
+        rvbj = sub(rvb,ib)
+        nzbj = sub(nzb,ib)
+        for k in eachindex(ib)
+            BLAS.axpy!(-nzbj[k],raj,sub(C,:,Int(rvbj[k])))
+        end
     end
     C
 end
@@ -290,7 +308,6 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
         tj = lmm.trms[j]
         setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
         for i in j:nt                   # scale the jth column by λ'
-            @show i,j,typeof(L[i,j])
             scale!(L[i,j],tj)
         end
         for jj in 1:j                   # scale the jth row by λ
@@ -298,7 +315,7 @@ function setpars!(lmm::LMM,pars::Vector{Float64})
         end
         inflate!(L[j,j])                # L[j,j] += I
     end
-#    cfactor!(L)
+    cfactor!(L)
     lmm
 end
 
@@ -330,4 +347,30 @@ Base.LinAlg.A_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{T}) =
 function Base.logdet(t::UpperTriangular)
     n = Base.LinAlg.chksquare(t)
     mapreduce(log,(+),diag(t))
+end
+
+function Base.logdet(t::LowerTriangular)
+    n = Base.LinAlg.chksquare(t)
+    mapreduce(log,(+),diag(t))
+end
+
+function Base.LinAlg.A_rdiv_Bc!{T<:FloatingPoint}(A::SparseMatrixCSC{T},B::Diagonal{T})
+    m,n = size(A)
+    dd = B.diag
+    n == length(dd) || throw(DimensionMismatch(""))
+    nz = nonzeros(A)
+    for j in eachindex(dd)
+        @inbounds scale!(sub(nz,nzrange(A,j)),inv(dd[j]))
+    end
+    A
+end
+
+function Base.LinAlg.A_rdiv_Bc!{T<:FloatingPoint}(A::Matrix{T},B::Diagonal{T})
+    m,n = size(A)
+    dd = B.diag
+    n == length(dd) || throw(DimensionMismatch(""))
+    for j in eachindex(dd)
+        @inbounds scale!(sub(A,:,j),inv(dd[j]))
+    end
+    A
 end
