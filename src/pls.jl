@@ -110,12 +110,17 @@ function downdate!(C::LowerTriangular,A::SparseMatrixCSC)
     m == size(A,1) || throw(DimensionMismatch(""))
     rv = rowvals(A)
     nz = nonzeros(A)
-    for j in 1:n
-        inds = nzrange(A,j)
-        rvj = sub(rv,inds)
-        nzj = sub(nz,inds)
-        for k in eachindex(inds), i in k:length(inds)
-            @inbounds C[rvj[i],rvj[k]] -= nzj[i]*nzj[k]
+    cc = C.data
+    for k in 1:n
+        rng = nzrange(A,k)
+        nzk = sub(nz,rng)
+        rvk = sub(rv,rng)
+        for j in eachindex(rng)
+            nzkj = nzk[j]
+            rvkj = rvk[j]
+            for i in j:length(rng)
+                @inbounds cc[rvk[i],rvkj] -= nzkj*nzk[i]
+            end
         end
     end
     C
