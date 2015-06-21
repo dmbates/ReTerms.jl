@@ -27,7 +27,11 @@ function g2dict(fid::HDF5File,gnm)
     res = Dict{Symbol,Any}()
     g = fid[gnm]
     for nm in names(g)
-        res[Symbol(nm)] = readmmap(g[nm])
+        dd = readmmap(g[nm])
+        if eltype(dd) <: Unsigned && isperm(unique(dd))
+            dd = PooledDataArray(DataArrays.RefArray(dd),convert(Vector{Int32},[1:maximum(dd);]))
+        end
+        res[Symbol(nm)] = dd
     end
     res
 end
