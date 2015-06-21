@@ -1,3 +1,54 @@
+type SimpleScalarReTerm <: ReTerm
+    f::PooledDataVector
+    λ::Float64
+end
+
+Base.size(t::SimpleScalarReTerm) = (length(t.f.refs),length(t.f.pool))
+Base.size(t::SimpleScalarReTerm,i) = size(t)[i]
+
+function Base.A_mul_B!(r::DenseVecOrMat, t::SimpleScalarReTerm, v::DenseVecOrMat)
+    n,q = size(t)
+    k = size(v,2)
+    size(r,1) == n && size(v,1) == q && size(r,2) == k || throw(DimensionMismatch(""))
+    rr = t.f.refs
+    if k == 1
+        r = v[rr]
+    else
+        for j in 1:k
+            sub(r,:,j) = sub(v,:,rr)
+        end
+    end
+    scale!(r,t.λ)
+end
+
+function *(t::SimpleScalarReTerm, v::DenseVecOrMat)
+    k = size(t,1)
+    A_mul_B!(Array(Float64, isa(v,Vector) ? (k,) : (k,size(v,2))), t, v)
+end
+
+function Base.Ac_mul_B!(r::DenseVecOrMat, t::SimpleScalarReTerm, v::DenseVecOrMat)
+    n,q = size(t)
+    k = size(v,2)
+    size(r,1) == q && size(v,1) == n && size(r,2) == k || throw(DimensionMismatch(""))
+    fill!(r,zero(eltype(r)))
+    rr = t.f.refs
+    if k == n1
+        for i in 1:n
+            @inbounds r[rr[i]] += v[i]
+        end
+    else
+        for j in 1:k, i in 1:n
+            @inbounds r[rr[i],j] += v[i,j]
+        end
+    end
+    scale!(r,t.λ)
+end
+
+function Base.Ac_mul_B(t::SimpleScalarReTerm, v::DenseVecOrMat{Float64})
+    k = size(t,2)
+    Ac_mul_B!(Array(Float64, isa(v,Vector) ? (k,) : (k, size(v,2))), t, v)
+end
+
 type ScalarReTerm <: ReTerm
     f::PooledDataVector                 # grouping factor
     z::Vector{Float64}
@@ -117,7 +168,7 @@ end
 function Base.scale!{T<:Number}(s::T,t::LowerTriangular{T})
     m,n = size(t)
     for j in 1:n, i in j:m
-        @inbounds t[i,j] *= s
+        @inbounds t.data[i,j] *= s
     end
     t
 end
