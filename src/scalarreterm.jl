@@ -126,6 +126,7 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::ScalarReTerm)
             @inbounds r[rr[i]] += v[i] * zz[i]
         end
     else
+## FIXME Change this to use pointers, as in the downdate! method in pls.jl
         for j in 1:n
             BLAS.axpy!(zz[j],sub(v,j,:),sub(r,:,Int(rr[j])))
         end

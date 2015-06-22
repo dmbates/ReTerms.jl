@@ -125,41 +125,60 @@ function downdate!(C::LowerTriangular,A::SparseMatrixCSC)
     end
     C
 end
-function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
+function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64},B::SparseMatrixCSC{Float64})
     ma,na = size(A)
     mb,nb = size(B)
     ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
-    rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
-    for j in 1:nb
-        ia = nzrange(A,j)
-        ib = nzrange(B,j)
-        rvaj = sub(rva,ia)
-        rvbj = sub(rvb,ib)
-        nzaj = sub(nza,ia)
-        nzbj = sub(nzb,ib)
-        for k in eachindex(ib)
-            krv = rvbj[k]
-            knz = nzbj[k]
-            for i in eachindex(ia)
-                C[rvaj[i],krv] -= nzaj[i]*knz
-            end
-        end                                     
-    end
-    C
+    cc = similar(C)
+    ccall((:mkl_dcsrmultd,:libmkl_rt),Void,
+          (Ref{UInt8},Ref{Int32},Ref{Int32},Ref{Int32},
+           Ptr{Float64},Ptr{Int32},Ptr{Int32},
+           Ptr{Float64},Ptr{Int32},Ptr{Int32},
+           Ptr{Float64},Ref{Int32}),
+          "T",na,ma,nb,
+          nonzeros(A),rowvals(A),A.colptr,
+          nonzeros(B),rowvals(B),B.colptr,
+          cc,ma)
+#    C -= cc
+    cc
 end
+
+## function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
+##     ma,na = size(A)
+##     mb,nb = size(B)
+##     ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
+##     rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
+##     for j in 1:nb
+##         ia = nzrange(A,j)
+##         ib = nzrange(B,j)
+##         rvaj = sub(rva,ia)
+##         rvbj = sub(rvb,ib)
+##         nzaj = sub(nza,ia)
+##         nzbj = sub(nzb,ib)
+##         for k in eachindex(ib)
+##             krv = rvbj[k]
+##             knz = nzbj[k]
+##             for i in eachindex(ia)
+##                 @inbounds C[rvaj[i],krv] -= nzaj[i]*knz
+##             end
+##         end
+##     end
+##     C
+## end
 function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T})
     ma,na = size(A)
     mb,nb = size(B)
     ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
     rvb = rowvals(B); nzb = nonzeros(B)
     for j in 1:nb
-        raj = sub(A,:,j)
+        ptA = pointer(A,1+(j-1)*ma)
         ib = nzrange(B,j)
         rvbj = sub(rvb,ib)
         nzbj = sub(nzb,ib)
         for k in eachindex(ib)
-            BLAS.axpy!(-nzbj[k],raj,sub(C,:,Int(rvbj[k])))
+            BLAS.axpy!(ma,-nzbj[k],ptA,1,pointer(C,1+(rvbj[k]-1)*ma),1)
         end
+        ptA += ma
     end
     C
 end
@@ -291,7 +310,7 @@ Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.L)[1:end-1])
 
 lower(lmm::LMM) = lmm.lower
 
-@doc "Negative twice the log-likelihood"
+@doc "Negative twice the log-likelihood"->
 function objective(lmm::LMM)
     n = size(lmm.trms[1],1)
     logdet(lmm) + n*(1.+log(2π*abs2(lmm.L[end,end][end,end])/n))
