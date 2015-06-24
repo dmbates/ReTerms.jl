@@ -22,14 +22,31 @@ A no-op for other matrix types.
 """->
 densify(S,threshold=0.3) = issparse(S) && nnz(S)/(*(size(S)...)) > threshold ? full(S) : S
 
+@doc """Create a value of the pool for a PooledDataArray from an unsigned vector"""->
+function getpool(f::HDF5.HDF5Dataset,dd)
+    uu = unique(dd)
+    isperm(uu) || error("unique values are not a permutation")
+    if exists(attrs(f),"pool")
+        pool = read(attrs(f)["pool"])
+        if eltype(pool) == UInt8
+            pool = convert(Vector{Char},pool)
+        end
+        return pool
+    end
+    nu = length(uu)
+    return convert(Vector{nu > typemax(Int32) ? Int64 :
+                          nu > typemax(Int16) ? Int32 :
+                          nu > typemax(Int8) ? Int16 : Int8}, [1:nu;])
+end
+        
 @doc """Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""->
 function g2dict(fid::HDF5File,gnm)
     res = Dict{Symbol,Any}()
     g = fid[gnm]
     for nm in names(g)
         dd = readmmap(g[nm])
-        if eltype(dd) <: Unsigned && isperm(unique(dd))
-            dd = PooledDataArray(DataArrays.RefArray(dd),convert(Vector{Int32},[1:maximum(dd);]))
+        if eltype(dd) <: Unsigned
+            dd = PooledDataArray(DataArrays.RefArray(dd),getpool(g[nm],dd))
         end
         res[Symbol(nm)] = dd
     end

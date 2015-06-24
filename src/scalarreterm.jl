@@ -147,7 +147,7 @@ function Base.Ac_mul_B(t::ScalarReTerm, s::ScalarReTerm)
         end
         return Diagonal(crprd)
     end
-    sparse(convert(Vector{Int32},t.f.refs),convert(Vector{Int32},s.f.refs),t.z .* s.z)
+    sparse(convert(Vector{BlasInt},t.f.refs),convert(Vector{BlasInt},s.f.refs),t.z .* s.z)
 end
 
 lowerbd(t::ScalarReTerm) = zeros(Float64,1)
@@ -182,7 +182,8 @@ npar(t::ScalarReTerm) = 1
 
 Base.scale!(r::DenseVecOrMat{Float64},t::ScalarReTerm,a::DenseVecOrMat{Float64}) = scale!(t.λ,copy!(r,a))
 
-function Base.scale!(r::SparseMatrixCSC,t::ScalarReTerm,a::SparseMatrixCSC)
+function Base.scale!(r::SparseMatrixCSC{Float64,BlasInt},t::ScalarReTerm,
+                     a::SparseMatrixCSC{Float64,BlasInt})
     size(r) == size(a) && nnz(r) == nnz(a) || throw(DimensionMismatch(""))
     λ = t.λ
     rcp = r.colptr
@@ -203,7 +204,7 @@ end
 
 Base.scale!(r::DenseVecOrMat{Float64},t::ScalarReTerm) = scale!(r,t.λ)
 
-function Base.scale!(r::SparseMatrixCSC{Float64},t::ScalarReTerm)
+function Base.scale!(r::SparseMatrixCSC{Float64,BlasInt},t::ScalarReTerm)
     scale!(r.nzval,t.λ)
     r
 end

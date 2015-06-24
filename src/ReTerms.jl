@@ -6,6 +6,8 @@ module ReTerms
 
     export g2dict, getpars, lowerbd, objective, reterm, setpars!
 
+    using Base.LinAlg.BlasInt
+
     include("utils.jl")
     include("reterm.jl")
     include("scalarreterm.jl")
