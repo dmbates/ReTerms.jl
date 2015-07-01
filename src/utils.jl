@@ -52,3 +52,18 @@ function g2dict(fid::HDF5File,gnm)
     end
     res
 end
+
+function Base.scale!(x::Number,t::UpperTriangular{Float64})
+    m,n = size(t)
+    for j in 1:n, i in 1:j
+        @inbounds t[i,j] *= x
+    end
+end
+
+function Base.scale!{T<:Number}(s::T,t::LowerTriangular{T})
+    m,n = size(t)
+    for j in 1:n, i in j:m
+        @inbounds t.data[i,j] *= s
+    end
+    t
+end

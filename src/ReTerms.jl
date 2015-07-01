@@ -10,6 +10,7 @@ module ReTerms
 
     include("utils.jl")
     include("reterm.jl")
+    include("simplescalarreterm.jl")
     include("scalarreterm.jl")
     include("vectorreterm.jl")
     include("pls.jl")
