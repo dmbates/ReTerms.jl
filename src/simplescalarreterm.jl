@@ -101,9 +101,8 @@ function Base.Ac_mul_B!(r::DenseVecOrMat, v::DenseVecOrMat, t::SimpleScalarReTer
             @inbounds r[rr[i]] += v[i]
         end
     else
-## FIXME Change this to use pointers, as in the downdate! method in pls.jl
-        for j in 1:n
-            BLAS.axpy!(1.,sub(v,j,:),sub(r,:,Int(rr[j])))
+        for j in 1:k, i in 1:n
+            @inbounds r[j,rr[i]] += v[i,j]
         end
     end
     t.λ == 1 ? r : scale!(r,t.λ)

@@ -207,15 +207,15 @@ else
         rv = rowvals(A)
         nz = nonzeros(A)
         cc = C.data
-        for k in 1:n
+        @inbounds for k in 1:n
             rng = nzrange(A,k)
-            nzk = sub(nz,rng)
-            rvk = sub(rv,rng)
+            nzk = view(nz,rng)
+            rvk = view(rv,rng)
             for j in eachindex(rng)
                 nzkj = nzk[j]
                 rvkj = rvk[j]
                 for i in j:length(rng)
-                    @inbounds cc[rvk[i],rvkj] -= nzkj*nzk[i]
+                    cc[rvk[i],rvkj] -= nzkj*nzk[i]
                 end
             end
         end

@@ -1,5 +1,6 @@
-julia 0.4.0-dev+5201
+julia 0.4-
 DataArrays
 DataFrames
 NLopt
 StatsBase
+ArrayViews
