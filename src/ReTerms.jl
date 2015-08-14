@@ -1,18 +1,19 @@
 module ReTerms
 
-    using ArrayViews, DataArrays, DataFrames, HDF5, NLopt, StatsBase
+    using DataArrays, DataFrames, HDF5, NLopt, StatsBase
 
-    export LMM, ReTerm, ScalarReTerm, VectorReTerm  # types
+    export ReMat
 
-    export g2dict, getpars, lowerbd, objective, reterm, setpars!
+    export g2dict, lowerbd, objective, reterm
 
     using Base.LinAlg.BlasInt
 
-    include("utils.jl")
-    include("reterm.jl")
-    include("simplescalarreterm.jl")
-    include("scalarreterm.jl")
-    include("vectorreterm.jl")
-    include("pls.jl")
+#    include("utils.jl")
+    include("paramlowertriangular.jl")
+    include("remat.jl")
+#    include("simplescalarreterm.jl")
+#    include("scalarreterm.jl")
+#    include("vectorreterm.jl")
+#    include("pls.jl")
 
 end # module

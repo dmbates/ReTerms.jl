@@ -1,39 +1,34 @@
 """
-`ReTerm` - a random effects term
+`ReMat` - a random effects matrix
 
 The term consists of the grouping factor, `f`, the transposed dense model
-matrix `z` and the parameterized lower triangular matrix `λ`.  The size
-of `λ` must be `size(z,1)`. `size(z,2)` must be `length(f)`.  
+matrix `z`.  The length of `f` must be equal to the number of columns of `z`
 """
-type ReTerm{T}
+immutable ReMat
     f::PooledDataVector                 # grouping factor
-    z::Matrix{T}
-    λ::ParamLowerTriangular{T}
-    ## function ReTerm(p::PooledDataVector,z::Matrix{T},λ::ParamLowerTriangular{T})
-    ##     length(p) == size(z,2) && size(λ,1) == size(z,1) || throw(DimensionMismatch())
-    ##     new(p,z,λ)
-    ## end
+    z::Matrix
+    function ReMat(p::PooledDataVector,z::Matrix)
+        length(p) == size(z,2) || throw(DimensionMismatch())
+        new(p,z)
+    end
 end
 
-function ReTerm(p::PooledDataVector,z::Matrix)
-    length(p) == size(z,2) || throw(DimensionMismatch())
-    ReTerm(p,z,ColMajorLowerTriangular(LowerTriangular(eye(eltype(z),size(z,1)))))
-end
+ReMat(p::PooledDataVector,v::Vector) = ReMat(p,v')
 
-ReTerm(p::PooledDataVector,v::Vector) = ReTerm(p,v')
+ReMat(p::PooledDataVector) = ReMat(p,ones(1,length(p)))
 
-ReTerm(p::PooledDataVector) = ReTerm(p,ones(1,length(p)))
+ReMat{T<:Integer}(v::Vector{T}) = ReMat(compact(pool(v)))
 
-ReTerm{T<:Integer}(v::Vector{T}) = ReTerm(compact(pool(v)))
+Base.eltype(A::ReMat) = eltype(A.z)
 
-Base.size(A::ReTerm) = (length(A.f),(size(A.z,1)*length(A.f.pool)))
+Base.size(A::ReMat) = (length(A.f),(size(A.z,1)*length(A.f.pool)))
 
-Base.size(A::ReTerm,i::Integer) =
+Base.size(A::ReMat,i::Integer) =
     i < 1 ? throw(BoundsError()) :
     i == 1 ? length(A.f) :
     i == 2 ? (length(A.f.pool)*size(A.z,1)) : 1
 
-function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::ReTerm{T},B::DenseVecOrMat{T})
+function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::ReMat,B::DenseVecOrMat{T})
     n,q = size(A)
     k = size(B,2)
     size(R,1) == q && size(B,1) == n && size(R,2) == k || throw(DimensionMismatch(""))
@@ -48,15 +43,16 @@ function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::ReTerm{T},B::DenseVecOrMat{T})
     R
 end
 
-function Base.Ac_mul_B{T}(A::ReTerm{T},B::DenseVecOrMat{T})
+function Base.Ac_mul_B{T}(A::ReMat,B::DenseVecOrMat{T})
     k = size(A,2)
     Ac_mul_B!(Array(Float64, isa(B,Vector) ? (k,) : (k, size(B,2))), A, B)
 end
 
-function Base.Ac_mul_B{T}(A::ReTerm{T}, B::ReTerm{T})
+function Base.Ac_mul_B(A::ReMat, B::ReMat)
     if is(A,B)
         k = size(A.z,1)
         nl = length(A.f.pool)
+        T = promote_type(eltype(A),eltype(B))
         crprd = zeros(T,(k,k,nl))
         z = A.z
         rr = A.f.refs
@@ -76,3 +72,4 @@ function Base.Ac_mul_B{T}(A::ReTerm{T}, B::ReTerm{T})
     (r,s) = promote(A.f.refs,B.f.refs)
     sparse(r,s,[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:n])
 end
+
