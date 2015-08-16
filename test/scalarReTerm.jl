@@ -8,8 +8,12 @@ const Yield = convert(Vector{Float64}, convert(Array,ds[:Yield]))
 
 dd = fill(5., 6)
 @test sf'ones(30) == dd
+
 const crp = sf'sf
-@test crp == fill(5.,(1,1,6))
-@test sf'Yield == [7525.0,7640.0,7820.0,7490.0,8000.0,7350.0]
-@test Diagonal(vec(crp))\(sf'Yield) == [1505.,1528.,1564.,1498.,1600.,1470.]
+@test isa(crp, ReTerms.HBlkDiag{Float64})
+@test size(crp) == (6,6)
+@test crp.arr == fill(5.,(1,1,6))
+const rhs = sf'Yield
+@test rhs == [7525.0,7640.0,7820.0,7490.0,8000.0,7350.0]
+@test A_ldiv_B!(similar(rhs),crp,rhs) == [1505.,1528.,1564.,1498.,1600.,1470.]
 

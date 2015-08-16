@@ -1,7 +1,7 @@
 """
 `ReMat` - a random effects matrix
 
-The term consists of the grouping factor, `f`, the transposed dense model
+The matrix consists of the grouping factor, `f`, and the transposed dense model
 matrix `z`.  The length of `f` must be equal to the number of columns of `z`
 """
 immutable ReMat
@@ -62,7 +62,7 @@ function Base.Ac_mul_B(A::ReMat, B::ReMat)
         for j in 1:nl
             Base.LinAlg.copytri!(sub(crprd,:,:,j),'L')
         end
-        return crprd
+        return HBlkDiag(crprd)
     end
     Az = A.z
     k,l = size(Az)

@@ -61,4 +61,9 @@ function lowerbd{T}(A::ColMajorLowerTriangular{T})
     res
 end
 
+"""
+size of the parameter vector
+"""
 nθ(A::ColMajorLowerTriangular) = nlower(size(A.Lambda.data,1))
+
+

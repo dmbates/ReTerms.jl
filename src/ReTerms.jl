@@ -9,8 +9,9 @@ module ReTerms
     using Base.LinAlg.BlasInt
 
 #    include("utils.jl")
-    include("paramlowertriangular.jl")
+    include("blockmats.jl")
     include("remat.jl")
+    include("paramlowertriangular.jl")
 #    include("simplescalarreterm.jl")
 #    include("scalarreterm.jl")
 #    include("vectorreterm.jl")
