@@ -20,6 +20,7 @@ end
 
 Base.copy!{T}(d::HBlkDiag{T},s::HBlkDiag{T}) = copy!(d.arr,s.arr)
 
+Base.copy{T}(s::HBlkDiag{T}) = HBlkDiag(copy(s.arr))
 
 function Base.LinAlg.A_ldiv_B!(R::DenseVecOrMat,A::HBlkDiag,B::DenseVecOrMat)
     Aa = A.arr
@@ -37,4 +38,13 @@ function Base.LinAlg.A_ldiv_B!(R::DenseVecOrMat,A::HBlkDiag,B::DenseVecOrMat)
         Base.LinAlg.A_ldiv_B!(sub(R,rows,:),sub(A.arr,:,:,b),sub(B,rows,:))
     end
     R
+end
+
+function Base.getindex{T}(A::HBlkDiag{T},i::Integer,j::Integer)
+    Aa = A.arr
+    r,s,k = size(Aa)
+    bi,ri = divrem(i,r)
+    bj,rj = divrem(j,s)
+    bi == bj || return zero(T)
+    Aa[ri+1,rj+1,bi]
 end
