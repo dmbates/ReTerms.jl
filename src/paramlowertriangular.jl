@@ -16,6 +16,8 @@ Base.convert(::Type{LowerTriangular},A::ColMajorLowerTriangular) = A.Lambda
 
 Base.size(A::ColMajorLowerTriangular, args...) = size(A.Lambda, args...)
 
+Base.size(A::ColMajorLowerTriangular) = size(A.Lambda)
+
 Base.copy(A::ColMajorLowerTriangular) = ColMajorLowerTriangular(copy(A.Lambda))
 
 Base.full(A::ColMajorLowerTriangular) = full(A.Lambda)
@@ -66,4 +68,21 @@ size of the parameter vector
 """
 nθ(A::ColMajorLowerTriangular) = nlower(size(A.Lambda.data,1))
 
+function Base.Ac_mul_B!(A::ColMajorLowerTriangular,B::HBlkDiag)
+    Ba = B.arr
+    r,s,k = size(Ba)
+    Al = A.Lambda
+    n = Base.LinAlg.chksquare(Al)
+    n == r || throw(DimensionMismatch())
+    if r == 1
+        scale!(Ba,Al[1,1])
+    else
+        Ac_mul_B!(Al,reshape(Ba,(r,s*k)))
+    end
+    B
+end
 
+function LT(A::ReMat)
+    Az = A.z
+    ColMajorLowerTriangular(LowerTriangular(eye(eltype(Az),size(Az,1))))
+end

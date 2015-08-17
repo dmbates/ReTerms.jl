@@ -43,9 +43,9 @@ function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::ReMat,B::DenseVecOrMat{T})
     R
 end
 
-function Base.Ac_mul_B{T}(A::ReMat,B::DenseVecOrMat{T})
+function Base.Ac_mul_B(A::ReMat,B::DenseVecOrMat)
     k = size(A,2)
-    Ac_mul_B!(Array(Float64, isa(B,Vector) ? (k,) : (k, size(B,2))), A, B)
+    Ac_mul_B!(Array(eltype(B), isa(B,Vector) ? (k,) : (k, size(B,2))), A, B)
 end
 
 function Base.Ac_mul_B(A::ReMat, B::ReMat)
@@ -73,3 +73,25 @@ function Base.Ac_mul_B(A::ReMat, B::ReMat)
     sparse(r,s,[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:n])
 end
 
+function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::DenseVecOrMat{T},B::ReMat)
+    m = size(A,1)
+    n = size(A,2)
+    p,q = size(B)
+    m == p && size(R,1) == n && size(R,2) == q || throw(DimensionMismatch(""))
+    fill!(R,zero(T))
+    rr = B.f.refs
+    zz = B.z
+    l = size(zz,1)
+    if l == 1
+        for j in 1:n, i in 1:m
+            R[j,rr[i]] += A[i,j] * zz[i]
+        end
+    else
+        for j in 1:n, i in 1:m
+            Base.LinAlg.axpy!(A[i,j],sub(zz,:,i),sub(R,j,(rr[i]-1)*l + (1:l)))
+        end
+    end
+    R
+end
+
+Base.Ac_mul_B(A::DenseVecOrMat,B::ReMat) = Ac_mul_B!(Array(eltype(A),(size(A,2),size(B,2))),A,B)
