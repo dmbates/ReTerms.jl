@@ -1,31 +1,34 @@
 type LMM <: StatsBase.RegressionModel
-    trms::Vector{Any}
-    A::Matrix{Any}   # symmetric cross-product blocks (lower triangle)
+    trms::Vector
+    Λ::Vector
+    A::Matrix        # symmetric cross-product blocks (lower triangle)
     L::LowerTriangular          # left Cholesky factor in blocks.
-    lower::Vector{Float64}      # vector of lower bounds on parameters
-    pars::Vector{Float64}       # current parameter vector
     gp::Vector
     fit::Bool
 end
 
-function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
+function LMM(Rem::Vector{ReMat}, Λ::Vector, X::AbstractMatrix, y::Vector)
     n,p = size(X)
-    all(t -> size(t,1) == n, rev) && length(y) == n || throw(DimensionMismatch(""))
-    lower = mapreduce(lowerbd,vcat,rev)
-    nt = length(rev) + 1
+    all(t -> size(t,1) == n,Rem) && length(y) == n || throw(DimensionMismatch("n not consistent"))
+    nreterms = length(Rem)
+    length(Λ) == nreterms &&
+        all(Bool[size(Λ[i],1) == size(Rem[i].z,1) for i in 1:nreterms]) ||
+        throw(DimensionMismatch("Rem and Λ"))
+    nt = nreterms + 1
     trms = Array(Any,nt)
-    for i in eachindex(rev) trms[i] = rev[i] end
+    for i in eachindex(Rem) trms[i] = Rem[i] end
     trms[end] = hcat(X,y)
     A = fill!(Array(Any,(nt,nt)),nothing)
     L = LowerTriangular(fill!(Array(Any,(nt,nt)),nothing))
     for j in 1:nt, i in j:nt
-        A[i,j] = densify(trms[i]'trms[j])
+        #        A[i,j] = densify(trms[i]'trms[j])
+        A[i,j] = trms[i]'trms[j]
     end
     for i in 1:nt              # first col is sparse, others are dense
         L[i,1] = copy(A[i,1])
     end
     for k in 2:nt
-        L[k,k] = LowerTriangular(tril(full(copy(A[k,k]))))
+        L[k,k] = copy(A[k,k])
         ## if isdiag(L[k,k]) # factor k is nested in previous factors
         ##     L[k,k] = Diagonal(diag(L[k,k]))
         ##     for i in (k + 1):nt
@@ -33,7 +36,7 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
         ##     end
         ## else
             for i in (k + 1):nt
-                L[i,k] = full(copy(A[i,k]))
+                L[i,k] = copy(A[i,k])
             end
         ## end
         ## for j in (k + 1):nt
@@ -43,15 +46,14 @@ function LMM(X::AbstractMatrix, rev::Vector, y::Vector)
         ## end
     end
     A[end,end] = LowerTriangular(tril(A[end,end]))
-    pars = [x == 0. ? 1. : 0. for x in lower]
-#    LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false)
-    setpars!(LMM(trms,A,L,lower,pars,cumsum(vcat(1,map(npar,rev))),false),pars)
+    LMM(trms,Λ,A,L,cumsum(vcat(1,map(nθ,Λ))),false)
 end
 
-LMM(X::AbstractMatrix,re::Vector,y::DataVector) = LMM(X,re,convert(Array,y))
-LMM(re::Vector,y::DataVector) = LMM(ones(length(y),1),re,convert(Array,y))
-LMM(re::Vector,y::Vector) = LMM(ones(length(y),1),re,y)
-LMM(re::Vector{Symbol},y::Symbol,df) = LMM([reterm(df[s]) for s in re],df[y])
+LMM(re::Vector{ReMat},Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
+
+LMM(re::Vector{ReMat},X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array,y))
+
+lowerbd(A::LMM) = mapreduce(lowerbd,vcat,A.Λ)
 
 ## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
 
