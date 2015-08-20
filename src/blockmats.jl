@@ -18,7 +18,7 @@ function Base.size(A::HBlkDiag,i::Integer)
     (i == 1 ? r : s)*k
 end
 
-Base.copy!{T}(d::HBlkDiag{T},s::HBlkDiag{T}) = copy!(d.arr,s.arr)
+Base.copy!{T}(d::HBlkDiag{T},s::HBlkDiag{T}) = (copy!(d.arr,s.arr); d)
 
 Base.copy{T}(s::HBlkDiag{T}) = HBlkDiag(copy(s.arr))
 
@@ -34,8 +34,13 @@ function Base.LinAlg.A_ldiv_B!(R::DenseVecOrMat,A::HBlkDiag,B::DenseVecOrMat)
             R[i,j] = B[i,j]/Aa[i]
         end
     else
-        rows = (1:r)+(b-1)*k
-        Base.LinAlg.A_ldiv_B!(sub(R,rows,:),sub(A.arr,:,:,b),sub(B,rows,:))
+        db = similar(A.arr,(r,r))       # will hold the diagonal blocks
+        for b in 1:k
+            copy!(db,sub(A.arr,:,:,b))
+            rows = (1:r)+(b-1)*r
+            rr = copy!(sub(R,rows,:),sub(B,rows,:))
+            Base.LinAlg.A_ldiv_B!(ishermitian(db) ? cholfact!(db) : lufact!(db), rr)
+        end
     end
     R
 end
@@ -43,8 +48,36 @@ end
 function Base.getindex{T}(A::HBlkDiag{T},i::Integer,j::Integer)
     Aa = A.arr
     r,s,k = size(Aa)
-    bi,ri = divrem(i,r)
-    bj,rj = divrem(j,s)
+    bi,ri = divrem(i-1,r)
+    bj,rj = divrem(j-1,s)
     bi == bj || return zero(T)
-    Aa[ri+1,rj+1,bi]
+    Aa[ri+1,rj+1,bi+1]
+end
+
+function Base.cholfact!(A::HBlkDiag,uplo::Symbol=:U)
+    Aa = A.arr
+    r,s,k = size(Aa)
+    r == s || throw(ArgumentError("A must be square"))
+    if r == 1
+        for j in 1:k
+            Aa[1,1,j] = sqrt(Aa[1,1,j])
+        end
+    else
+        for j in 1:k
+            cholfact!(sub(Aa,:,:,j),uplo)
+        end
+    end
+    A
+end
+
+"""
+Equivalent to `A = A + I` without making a copy of A
+"""
+function inflate!(A::HBlkDiag)
+    Aa = A.arr
+    r,s,k = size(Aa)
+    for j in 1:k, i in 1:min(r,s)
+        Aa[i,i,j] += 1
+    end
+    A
 end

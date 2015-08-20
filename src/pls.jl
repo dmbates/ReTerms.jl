@@ -45,7 +45,7 @@ function LMM(Rem::Vector{ReMat}, Λ::Vector, X::AbstractMatrix, y::Vector)
         ##     end
         ## end
     end
-    A[end,end] = LowerTriangular(tril(A[end,end]))
+    A[end,end] = Symmetric(tril(A[end,end]),:L)
     LMM(trms,Λ,A,L,cumsum(vcat(1,map(nθ,Λ))),false)
 end
 

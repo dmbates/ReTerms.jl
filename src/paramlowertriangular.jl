@@ -20,6 +20,8 @@ Base.size(A::ColMajorLowerTriangular) = size(A.Lambda)
 
 Base.copy(A::ColMajorLowerTriangular) = ColMajorLowerTriangular(copy(A.Lambda))
 
+Base.copy!(A::ColMajorLowerTriangular,B::ColMajorLowerTriangular) = (copy!(A.Lambda.data,B.Lambda.data);A)
+
 Base.full(A::ColMajorLowerTriangular) = full(A.Lambda)
 
 @inline nlower(n::Integer) = (n*(n+1))>>1
@@ -82,7 +84,13 @@ function Base.Ac_mul_B!(A::ColMajorLowerTriangular,B::HBlkDiag)
     B
 end
 
+function Base.Ac_mul_B!{T}(A::ColMajorLowerTriangular{T},B::Diagonal{T})
+    size(A,1) == 1 || throw(DimensionMismatch())
+    scale!(A.Lambda.data[1,1],B.diag)
+    B
+end
+        
 function LT(A::ReMat)
     Az = A.z
-    ColMajorLowerTriangular(LowerTriangular(eye(eltype(Az),size(Az,1))))
+    ColMajorLowerTriangular(LowerTriangular(eye(eltype(Az),1)))
 end

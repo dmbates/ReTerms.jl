@@ -1,4 +1,4 @@
-@doc "Create the pattern of the Cholesky factor based on the upper triangle of A"->
+"Create the pattern of the Cholesky factor based on the upper triangle of A"
 function cholpattern{Tv,Ti}(A::SparseMatrixCSC{Tv,Ti})
     m,n = size(A)
     m == n || error("A must be square")
@@ -16,13 +16,13 @@ function cholpattern{Tv,Ti}(A::SparseMatrixCSC{Tv,Ti})
     sparse(I,J,one(Tv))
 end
 
-@doc """
+"""
 Convert sparse to dense if the proportion of nonzeros exceeds a threshold.
 A no-op for other matrix types.
-"""->
+"""
 densify(S,threshold=0.3) = issparse(S) && nnz(S)/(*(size(S)...)) > threshold ? full(S) : S
 
-@doc """Create a value of the pool for a PooledDataArray from an unsigned vector"""->
+"""Create a value of the pool for a PooledDataArray from an unsigned vector"""
 function getpool(f::HDF5.HDF5Dataset,dd)
     uu = unique(dd)
     isperm(uu) || error("unique values are not a permutation")
@@ -39,7 +39,7 @@ function getpool(f::HDF5.HDF5Dataset,dd)
                           nu > typemax(Int8) ? Int16 : Int8}, [1:nu;])
 end
         
-@doc """Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""->
+"""Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""
 function g2dict(fid::HDF5File,gnm)
     res = Dict{Symbol,Any}()
     g = fid[gnm]
@@ -55,15 +55,34 @@ end
 
 function Base.scale!(x::Number,t::UpperTriangular{Float64})
     m,n = size(t)
+    td = t.data
     for j in 1:n, i in 1:j
-        @inbounds t[i,j] *= x
+        @inbounds td[i,j] *= x
     end
 end
 
 function Base.scale!{T<:Number}(s::T,t::LowerTriangular{T})
     m,n = size(t)
+    td = t.data
     for j in 1:n, i in j:m
-        @inbounds t.data[i,j] *= s
+        @inbounds td[i,j] *= s
     end
     t
+end
+
+function df2g(fid::HDF5File,nm::ByteString,df::DataFrame)
+    gg = g_create(fid,nm)
+    for sym in names(df)
+        d = df[sym]
+        if isa(d,DataArrays.PooledDataArray)
+            gg[string(sym)] = d.refs
+            if eltype(d.pool) <: Char
+                attrs(gg[string(sym)])["pool"] = convert(Vector{UInt8},d.pool)
+            else
+                attrs(gg[string(sym)])["pool"] = d.pool
+            end
+        else
+            gg[string(sym)] = convert(Array,d)
+        end
+    end
 end
