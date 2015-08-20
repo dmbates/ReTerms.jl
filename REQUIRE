@@ -3,4 +3,3 @@ DataArrays
 DataFrames
 NLopt
 StatsBase
-ArrayViews
