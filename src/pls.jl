@@ -2,30 +2,32 @@ type LMM <: StatsBase.RegressionModel
     trms::Vector
     Λ::Vector
     A::Matrix        # symmetric cross-product blocks (lower triangle)
-    L::LowerTriangular          # left Cholesky factor in blocks.
+    L::UpperTriangular          # right Cholesky factor in blocks.
     gp::Vector
     fit::Bool
 end
 
-function LMM(Rem::Vector{ReMat}, Λ::Vector, X::AbstractMatrix, y::Vector)
+function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
+    all(x->isa(x,AbstractReMat),Rem) ||
+        throw(ArgumentError("Elements of Rem should be AbstractReMat's"))
+    all(x->isa(x,ParamLowerTriangular),Λ) ||
+        throw(ArgumentError("Elements of Λ should be ParamLowerTriangular"))
     n,p = size(X)
     all(t -> size(t,1) == n,Rem) && length(y) == n || throw(DimensionMismatch("n not consistent"))
     nreterms = length(Rem)
-    length(Λ) == nreterms &&
-        all(Bool[size(Λ[i],1) == size(Rem[i].z,1) for i in 1:nreterms]) ||
+    length(Λ) == nreterms && all([chksz(Rem[i],Λ[i]) for i in 1:nreterms]) ||
         throw(DimensionMismatch("Rem and Λ"))
     nt = nreterms + 1
     trms = Array(Any,nt)
     for i in eachindex(Rem) trms[i] = Rem[i] end
     trms[end] = hcat(X,y)
     A = fill!(Array(Any,(nt,nt)),nothing)
-    L = LowerTriangular(fill!(Array(Any,(nt,nt)),nothing))
-    for j in 1:nt, i in j:nt
-        #        A[i,j] = densify(trms[i]'trms[j])
-        A[i,j] = trms[i]'trms[j]
+    L = UpperTriangular(fill!(Array(Any,(nt,nt)),nothing))
+    for j in 1:nt, i in 1:j
+        A[i,j] = densify(trms[i]'trms[j])
     end
-    for i in 1:nt              # first col is sparse, others are dense
-        L[i,1] = copy(A[i,1])
+    for j in 1:nt              # first row is sparse, others are dense
+        L[1,j] = copy(A[1,j])
     end
     for k in 2:nt
         L[k,k] = copy(A[k,k])
@@ -35,8 +37,8 @@ function LMM(Rem::Vector{ReMat}, Λ::Vector, X::AbstractMatrix, y::Vector)
         ##         L[i,k] = copy(A[i,k])
         ##     end
         ## else
-            for i in (k + 1):nt
-                L[i,k] = copy(A[i,k])
+            for j in (k+1):nt
+                L[k,j] = copy(A[k,j])
             end
         ## end
         ## for j in (k + 1):nt
@@ -45,15 +47,23 @@ function LMM(Rem::Vector{ReMat}, Λ::Vector, X::AbstractMatrix, y::Vector)
         ##     end
         ## end
     end
-    A[end,end] = Symmetric(tril(A[end,end]),:L)
+    A[end,end] = Symmetric(triu(A[end,end]),:U)
     LMM(trms,Λ,A,L,cumsum(vcat(1,map(nθ,Λ))),false)
 end
 
-LMM(re::Vector{ReMat},Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
+LMM(re::Vector,Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
 
-LMM(re::Vector{ReMat},X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array,y))
+LMM(re::Vector,X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array,y))
+
+chksz(A::ReMat,λ::ParamLowerTriangular) = size(λ,1) == 1
+chksz(A::VectorReMat,λ::ParamLowerTriangular) = size(λ,1) == size(A.z,1)
 
 lowerbd(A::LMM) = mapreduce(lowerbd,vcat,A.Λ)
+
+Base.getindex(m::LMM,s::Symbol) = mapreduce(x->x[s],vcat,m.Λ)
+
+function Base.setindex!(m::LMM,v::Vector,s::Symbol)
+end
 
 ## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
 
@@ -76,8 +86,8 @@ function cfactor!(A::AbstractMatrix)
     return LowerTriangular(A)
 end
 
-cfactor!(x::Number) = sqrt(real(x))
-cfactor!(D::Diagonal) = (map!(cfactor!,D.diag); D)
+cfactor!(x::Number) = sqrt(x)
+cfactor!(D::Diagonal) = (map!(sqrt,D.diag); D)
 cfactor!(L::LowerTriangular{Float64}) = Base.LinAlg.chol!(L.data,Val{:L})
 
 @doc "Subtract, in place, AA' or AB' from C"->
@@ -457,3 +467,24 @@ function Base.LinAlg.A_rdiv_Bc!{T<:FloatingPoint}(A::Matrix{T},B::Diagonal{T})
     end
     A
 end
+
+function Base.LinAlg.A_rdiv_B!(A::StridedVecOrMat,D::Diagonal)
+    m, n = size(A, 1), size(A, 2)
+    if n != length(D.diag)
+        throw(DimensionMismatch("diagonal matrix is $(length(D.diag)) by $(length(D.diag)) but left hand side has $n columns"))
+    end
+    (m == 0 || n == 0) && return A
+    dd = D.diag
+    for j = 1:n
+        dj = dd[j]
+        if dj == 0
+            throw(SingularException(j))
+        end
+        for i = 1:m
+            A[i,j] /= dj
+        end
+    end
+    A
+end
+
+Base.LinAlg.A_rdiv_Bc!(A::StridedVecOrMat,D::Diagonal) = A_rdiv_B!(A,D)
