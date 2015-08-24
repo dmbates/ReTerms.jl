@@ -304,23 +304,22 @@ function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     m
 end
 
-getpars(lmm::LMM) = lmm.pars
-
 grad!(v,lmm::LMM) = v
 
 hasgrad(lmm::LMM) = false
 
-@doc "Add an identity matrix to the argument, in place"->
-inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1. end; D)
+"Add an identity matrix to the argument, in place"
+inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1 end; D)
+
 function inflate!(A::LowerTriangular{Float64})
     n = Base.LinAlg.chksquare(A)
     for i in 1:n
-        @inbounds A[i,i] += 1.
+        @inbounds A[i,i] += 1
     end
     A
 end
 
-@doc "`copy!` allowing for heterogeneous matrix types"
+"like `copy!` but allowing for heterogeneous matrix types"
 inject!(d,s) = copy!(d,s)
 function inject!(d::LowerTriangular,s::LowerTriangular)
     (n = size(s,2)) == size(d,2) || throw(DimensionMismatch(""))

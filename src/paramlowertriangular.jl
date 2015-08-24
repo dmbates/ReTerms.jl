@@ -10,7 +10,7 @@ immutable ColMajorLowerTriangular{T,S<:AbstractMatrix} <: ParamLowerTriangular{T
     Lambda::LowerTriangular{T,S}
 end
 
-ColMajorLowerTriangular(n::Integer) = ColMajorLowerTriangular(LowerTriangular(eye(n)))
+ColMajorLowerTriangular(typ,n::Integer) = ColMajorLowerTriangular(LowerTriangular(eye(typ,n)))
 
 Base.convert(::Type{LowerTriangular},A::ColMajorLowerTriangular) = A.Lambda
 
@@ -89,8 +89,19 @@ function Base.Ac_mul_B!{T}(A::ColMajorLowerTriangular{T},B::Diagonal{T})
     scale!(A.Lambda.data[1,1],B.diag)
     B
 end
-        
-function LT(A::ReMat)
-    Az = A.z
-    ColMajorLowerTriangular(LowerTriangular(eye(eltype(Az),1)))
+
+LT(A::ReMat) = ColMajorLowerTriangular(eltype(A.z),1)
+
+LT(A::VectorReMat) = (Az = A.z; ColMajorLowerTriangular(eltype(Az),size(Az,1)))
+
+function Base.scale!{T}(A::ColMajorLowerTriangular{T},B::AbstractMatrix{T})
+    ald = A.Lambda.data
+    size(ald,1) == 1 || throw(DimensionMismatch())
+    scale!(ald[1],B)
+end
+
+function Base.scale!{T}(A::AbstractMatrix{T},B::ColMajorLowerTriangular{T})
+    bld = B.Lambda.data
+    size(bld,1) == 1 && return scale!(A,bld[1])
+    error("code not yet written")
 end
