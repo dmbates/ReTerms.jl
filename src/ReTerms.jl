@@ -16,6 +16,8 @@ include("utils.jl")
 include("blockmats.jl")
 include("remat.jl")
 include("paramlowertriangular.jl")
+include("cfactor.jl")
+include("inject.jl")
 include("pls.jl")
 
 end # module
