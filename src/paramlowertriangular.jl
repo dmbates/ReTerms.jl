@@ -12,6 +12,8 @@ end
 
 ColMajorLowerTriangular(typ,n::Integer) = ColMajorLowerTriangular(LowerTriangular(eye(typ,n)))
 
+ColMajorLowerTriangular(n::Integer) = ColMajorLowerTriangular(LowerTriangular(eye(n)))
+
 Base.convert(::Type{LowerTriangular},A::ColMajorLowerTriangular) = A.Lambda
 
 Base.size(A::ColMajorLowerTriangular, args...) = size(A.Lambda, args...)
@@ -40,7 +42,7 @@ end
 
 Base.getindex(A::ColMajorLowerTriangular,i::Integer,j::Integer) = A.Lambda[i,j]
 
-function Base.setindex!{T}(A::ColMajorLowerTriangular{T},v::Vector{T},s::Symbol)
+function Base.setindex!{T}(A::ColMajorLowerTriangular{T},v::StridedVector{T},s::Symbol)
     s == :θ || throw(KeyError(s))
     Ad = A.Lambda.data
     n = size(Ad,1)
