@@ -1,9 +1,8 @@
 type LMM <: StatsBase.RegressionModel
     trms::Vector
     Λ::Vector
-    A::Matrix        # symmetric cross-product blocks (lower triangle)
-    L::UpperTriangular          # right Cholesky factor in blocks.
-    gp::Vector
+    A::Matrix        # symmetric cross-product blocks (upper triangle)
+    R::Matrix        # right Cholesky factor in blocks.
     fit::Bool
 end
 
@@ -22,38 +21,23 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
     for i in eachindex(Rem) trms[i] = Rem[i] end
     trms[end] = hcat(X,y)
     A = fill!(Array(Any,(nt,nt)),nothing)
-    L = UpperTriangular(fill!(Array(Any,(nt,nt)),nothing))
+    R = fill!(Array(Any,(nt,nt)),nothing)
     for j in 1:nt, i in 1:j
         A[i,j] = densify(trms[i]'trms[j])
-    end
-    for j in 1:nt              # first row is sparse, others are dense
-        L[1,j] = copy(A[1,j])
-    end
-    for k in 2:nt
-        L[k,k] = copy(A[k,k])
-        ## if isdiag(L[k,k]) # factor k is nested in previous factors
-        ##     L[k,k] = Diagonal(diag(L[k,k]))
-        ##     for i in (k + 1):nt
-        ##         L[i,k] = copy(A[i,k])
-        ##     end
-        ## else
-            for j in (k+1):nt
-                L[k,j] = copy(A[k,j])
-            end
-        ## end
-        ## for j in (k + 1):nt
-        ##     for i in 1:(k-1)
-        ##         downdate!(L[k,j],L[i,k],L[i,j])
-        ##     end
-        ## end
+        R[i,j] = copy(A[i,j])
     end
     A[end,end] = Symmetric(triu(A[end,end]),:U)
-    LMM(trms,Λ,A,L,cumsum(vcat(1,map(nθ,Λ))),false)
+    R[end,end] = cholfact!(R[end,end])
+    LMM(trms,Λ,A,R,false)
 end
 
 LMM(re::Vector,Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
 
 LMM(re::Vector,X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array,y))
+
+LMM(g::PooledDataVector,y::DataVector) = LMM([ReMat(g)],y)
+
+LMM(re::Vector,y::DataVector) = LMM(re,ones(length(y),1),y)
 
 chksz(A::ReMat,λ::ParamLowerTriangular) = size(λ,1) == 1
 chksz(A::VectorReMat,λ::ParamLowerTriangular) = size(λ,1) == size(A.z,1)
@@ -63,193 +47,28 @@ lowerbd(A::LMM) = mapreduce(lowerbd,vcat,A.Λ)
 Base.getindex(m::LMM,s::Symbol) = mapreduce(x->x[s],vcat,m.Λ)
 
 function Base.setindex!(m::LMM,v::Vector,s::Symbol)
-end
-
-## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
-
-function cfactor!(A::AbstractMatrix)
-    n = Base.LinAlg.chksquare(A)
-    @inbounds begin
-        for k = 1:n
-            for j in 1:(k - 1)
-                downdate!(A[k,k],A[k,j])  # A[k,k] -= A[k,j]*A[k,j]'
-            end
-            cfactor!(A[k,k])   # (lower) Cholesky factor of A[k,k]
-            for i in (k + 1):n
-                for j in 1:(k - 1)
-                    downdate!(A[i,k],A[i,j],A[k,j]) # A[i,k] -= A[i,j]*A[k,j]
-                end
-                Base.LinAlg.A_rdiv_Bc!(A[i,k],A[k,k])
-            end
-        end
+    s == :θ || throw(ArgumentError("only ':θ' is meaningful for assignment"))
+    lam = m.Λ
+    length(v) == sum(nθ,lam) || throw(DimensionMismatch("length(v) should be $(sum(nθ,lam))"))
+    A = m.A
+    R = m.R
+    n = size(A,1)                       # inject upper triangle of A into L
+    for j in 1:n, i in 1:j
+        inject!(R[i,j],A[i,j])
     end
-    return LowerTriangular(A)
-end
-
-cfactor!(x::Number) = sqrt(x)
-cfactor!(D::Diagonal) = (map!(sqrt,D.diag); D)
-cfactor!(L::LowerTriangular{Float64}) = Base.LinAlg.chol!(L.data,Val{:L})
-
-@doc "Subtract, in place, AA' or AB' from C"->
-downdate!(C::LowerTriangular{Float64},A::DenseMatrix{Float64}) =
-    BLAS.syrk!('L','N',-1.0,A,1.0,C.data)
-downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
-    BLAS.gemm!('N','T',-1.0,A,B,1.0,C)
-function downdate!(C::Diagonal{Float64},A::SparseMatrixCSC{Float64,BlasInt})
-    m,n = size(A)
-    dd = C.diag
-    length(dd) == n || throw(DimensionMismatch(""))
-    nz = nonzeros(A)
-    for j in eachindex(dd)
-        for k in nzrange(A,j)
-            @inbounds dd[j] -= abs2(nz[k])
+    offset = 0
+    for i in eachindex(lam)
+        li = lam[i]
+        nti = nθ(li)
+        li[:θ] = sub(v,offset + (1:nti))
+        offset += nti
+        for j in i:size(R,2)
+            scale!(li,R[i,j])
         end
-    end
-    C
-end
-if Base.blas_vendor() == :mkl
-    function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64,BlasInt},B::DenseMatrix{Float64})
-        ma,na = size(A); mb,nb = size(B); mc,nc = size(C)
-        mc == na && nc == nb && ma == mb || throw(DimensionMismatch(""))
-        ccall((:mkl_dcscmm,:libmkl_rt),Void,
-              (Ptr{UInt8},Ref{BlasInt},Ref{BlasInt},Ref{BlasInt},
-               Ref{Float64},Ptr{UInt8},Ptr{Float64},Ptr{BlasInt},Ptr{BlasInt},Ptr{BlasInt},
-               Ptr{Float64},Ref{BlasInt},
-               Ref{Float64},Ptr{Float64},Ref{BlasInt}),
-              "T",mc,nc,mb,
-              -1.0,"G**F",nonzeros(A),rowvals(A),A.colptr,pointer(A.colptr,2),
-              B,nb,
-              1.0,C,nc)
-        C
-    end
-
-    function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64,BlasInt},B::SparseMatrixCSC{Float64,BlasInt})
-        ma,na = size(A)
-        mb,nb = size(B)
-        ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
-        cc = similar(C)
-        ccall((:mkl_dcsrmultd,:libmkl_rt),Void,
-              (Ref{UInt8},Ref{BlasInt},Ref{BlasInt},Ref{BlasInt},
-               Ptr{Float64},Ptr{BlasInt},Ptr{BlasInt},
-               Ptr{Float64},Ptr{BlasInt},Ptr{BlasInt},
-               Ptr{Float64},Ref{BlasInt}),
-              "T",na,ma,nb,
-              nonzeros(A),rowvals(A),A.colptr,
-              nonzeros(B),rowvals(B),B.colptr,
-              cc,ma)
-        map!(-,C,C,cc)
-    end
-
-    function downdate!(C::LowerTriangular{Float64},A::SparseMatrixCSC{Float64,BlasInt})
-        m,n = size(A)
-        m == size(C,1) || throw(DimensionMismatch(""))
-        cd = C.data
-        cc = similar(cd)
-        ccall((:mkl_dcsrmultd,:libmkl_rt),Void,
-              (Ptr{UInt8},Ref{BlasInt},Ref{BlasInt},Ref{BlasInt},
-               Ptr{Float64},Ptr{BlasInt},Ptr{BlasInt},
-               Ptr{Float64},Ptr{BlasInt},Ptr{BlasInt},
-               Ptr{Float64},Ref{BlasInt}),
-              "T",n,m,n,
-              nonzeros(A),rowvals(A),A.colptr,
-              nonzeros(A),rowvals(A),A.colptr,
-              cc,m)
-        for j in 1:m, i in j:m
-            cd[i,j] -= cc[i,j]
+        for ii in 1:i
+            scale!(R[ii,i],li)
         end
-        C
-    end
-
-    function downdate!{T<:Float64}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T,BlasInt})
-        ma,na = size(A)
-        mb,nb = size(B)
-        ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
-        rvb = rowvals(B); nzb = nonzeros(B)
-        for j in 1:nb
-            ptA = pointer(A,1+(j-1)*ma)
-            ib = nzrange(B,j)
-            rvbj = sub(rvb,ib)
-            nzbj = sub(nzb,ib)
-            for k in eachindex(ib)
-                BLAS.axpy!(ma,-nzbj[k],ptA,1,pointer(C,1+(rvbj[k]-1)*ma),1)
-            end
-        ptA += ma
-        end
-        C
-    end
-else
-    function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64,BlasInt},B::DenseMatrix{Float64})
-        m,n = size(A)
-        r,s = size(C)
-        r == n && s == size(B,2) && m == size(B,1) || throw(DimensionMismatch(""))
-        nz = nonzeros(A)
-        rv = rowvals(A)
-        for jj in 1:s, j in 1:n, k in nzrange(A,j)
-            C[j,jj] -= nz[k]*B[rv[k],jj]
-        end
-        C
-    end
-    
-    function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
-        ma,na = size(A)
-        mb,nb = size(B)
-        ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
-        rva = rowvals(A); nza = nonzeros(A); rvb = rowvals(B); nzb = nonzeros(B)
-        for j in 1:nb
-            ia = nzrange(A,j)
-            ib = nzrange(B,j)
-            rvaj = sub(rva,ia)
-            rvbj = sub(rvb,ib)
-            nzaj = sub(nza,ia)
-            nzbj = sub(nzb,ib)
-            for k in eachindex(ib)
-                krv = rvbj[k]
-                knz = nzbj[k]
-                for i in eachindex(ia)
-                    @inbounds C[rvaj[i],krv] -= nzaj[i]*knz
-                end
-        end
-        end
-        C
-    end
-
-    function downdate!(C::LowerTriangular{Float64},A::SparseMatrixCSC{Float64,BlasInt})
-        m,n = size(A)
-        m == size(A,1) || throw(DimensionMismatch(""))
-        rv = rowvals(A)
-        nz = nonzeros(A)
-        cc = C.data
-        @inbounds for k in 1:n
-            rng = nzrange(A,k)
-            nzk = view(nz,rng)
-            rvk = view(rv,rng)
-            for j in eachindex(rng)
-                nzkj = nzk[j]
-                rvkj = rvk[j]
-                for i in j:length(rng)
-                    cc[rvk[i],rvkj] -= nzkj*nzk[i]
-                end
-            end
-        end
-        C
-    end
-
-    function downdate!{T<:Float64}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T,BlasInt})
-        ma,na = size(A)
-        mb,nb = size(B)
-        ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
-        rvb = rowvals(B); nzb = nonzeros(B)
-        for j in 1:nb
-            ptA = pointer(A,1+(j-1)*ma)
-            ib = nzrange(B,j)
-            rvbj = sub(rvb,ib)
-            nzbj = sub(nzb,ib)
-            for k in eachindex(ib)
-                BLAS.axpy!(ma,-nzbj[k],ptA,1,pointer(C,1+(rvbj[k]-1)*ma),1)
-            end
-            ptA += ma
-        end
-        C
+        inflate!(R[i,i])
     end
 end
 
@@ -329,51 +148,6 @@ function inflate!(A::LowerTriangular{Float64})
     A
 end
 
-"like `copy!` but allowing for heterogeneous matrix types"
-inject!(d,s) = copy!(d,s)
-function inject!(d::LowerTriangular,s::LowerTriangular)
-    (n = size(s,2)) == size(d,2) || throw(DimensionMismatch(""))
-    for j in 1:n
-        copy!(sub(d,j:n,j),sub(s,j:n,j))
-    end
-    d
-end
-function inject!(d::AbstractMatrix{Float64}, s::Diagonal{Float64})
-    sd = s.diag
-    length(sd) == size(d,2) || throw(DimensionMismatch(""))
-    fill!(d,0.)
-    @inbounds for i in eachindex(sd)
-        d[i,i] = sd[i]
-    end
-    d
-end
-inject!(d::Diagonal{Float64},s::Diagonal{Float64}) = (copy!(d.diag,s.diag);d)
-function inject!(d::SparseMatrixCSC{Float64},s::SparseMatrixCSC{Float64})
-    m,n = size(d)
-    size(d) == size(s) || throw(DimensionMismatch(""))
-    if nnz(d) == nnz(s)
-        copy!(nonzeros(d),nonzeros(s))
-        return d
-    end
-    drv = rowvals(d); srv = rowvals(s); dnz = nonzeros(d); snz = nonzeros(s)
-    fill!(dnz,0.)
-    for j in 1:n
-        dnzr = nzrange(d,j)
-        dnzrv = sub(drv,dnzr)
-        snzr = nzrange(s,j)
-        if length(snzr) == length(dnzr) && all(dnzrv .== sub(srv,snzr))
-            copy!(sub(dnz,dnzr),sub(snz,snzr))
-        else
-            for k in snzr
-                ssr = srv[k]
-                kk = searchsortedfirst(dnzrv,ssr)
-                kk > length(dnzrv) || dnzrv[kk] != ssr || error("cannot inject sparse s into sparse d")
-                dnz[dnzr[kk]] = snz[k]
-            end
-        end
-    end
-    d
-end
 
 Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.L)[1:end-1])
 
