@@ -1,33 +1,45 @@
-## Slightly modified version of chol! from julia/base/linalg/cholesky.jl
+"""
+Slightly modified version of `chol!` from `julia/base/linalg/cholesky.jl`
 
+Uses `inject!` (as opposed to `copy!`), `downdate!` (as opposed to `syrk!`
+    or `gemm!`) and recursive calls to `cfactor!`,
+"""
 function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
-    @inbounds begin
+#    @inbounds begin
         for k = 1:n
-            for j in 1:(k - 1)
-                downdate!(A[k,k],A[k,j])  # A[k,k] -= A[k,j]*A[k,j]'
+            for i in 1:(k - 1)
+                downdate!(A[k,k],A[i,k])  # A[k,k] -= A[i.k]'A[i.k]
             end
-            cfactor!(A[k,k])   # (lower) Cholesky factor of A[k,k]
-            for i in (k + 1):n
-                for j in 1:(k - 1)
+            cfactor!(A[k,k])   # right Cholesky factor of A[k,k]
+            for j in (k + 1):n
+                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
+                for i in 1:(k - 1)
                     downdate!(A[i,k],A[i,j],A[k,j]) # A[i,k] -= A[i,j]*A[k,j]
                 end
-                Base.LinAlg.A_rdiv_Bc!(A[i,k],A[k,k])
             end
         end
-    end
-    return LowerTriangular(A)
+#    end
+    UpperTriangular(A)
 end
 
 cfactor!(x::Number) = sqrt(x)
 cfactor!(D::Diagonal) = (map!(sqrt,D.diag); D)
-cfactor!(L::LowerTriangular{Float64}) = Base.LinAlg.chol!(L.data,Val{:L})
+cfactor!(R::Matrix{Float64}) = Base.LinAlg.chol!(R,Val{:U})
+function cfactor!(R::HBlkDiag)
+    Ra = R.arr
+    r,s,k = size(Ra)
+    for i in 1:k
+        Base.LinAlg.chol!(sub(Ra,:,:,i),Val{:U})
+    end
+    R
+end
 
-@doc "Subtract, in place, AA' or AB' from C"->
-downdate!(C::LowerTriangular{Float64},A::DenseMatrix{Float64}) =
-    BLAS.syrk!('L','N',-1.0,A,1.0,C.data)
+"Subtract, in place, A'A or A'B from C"
+downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64}) =
+    BLAS.syrk!('U','T',-1.0,A,1.0,C)
 downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
-    BLAS.gemm!('N','T',-1.0,A,B,1.0,C)
+    BLAS.gemm!('T','N',-1.0,A,B,1.0,C)
 function downdate!(C::Diagonal{Float64},A::SparseMatrixCSC{Float64,BlasInt})
     m,n = size(A)
     dd = C.diag
@@ -185,4 +197,3 @@ else
         C
     end
 end
-

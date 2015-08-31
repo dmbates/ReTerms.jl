@@ -26,8 +26,8 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
         A[i,j] = densify(trms[i]'trms[j])
         R[i,j] = copy(A[i,j])
     end
-    A[end,end] = Symmetric(triu(A[end,end]),:U)
-    R[end,end] = cholfact!(R[end,end])
+#    A[end,end] = Symmetric(triu(A[end,end]),:U)
+#    R[end,end] = cholfact!(R[end,end])
     LMM(trms,Λ,A,R,false)
 end
 
@@ -60,6 +60,7 @@ function Base.setindex!(m::LMM,v::Vector,s::Symbol)
     for i in eachindex(lam)
         li = lam[i]
         nti = nθ(li)
+        @show nti,sub(v,offset+(1:nti))
         li[:θ] = sub(v,offset + (1:nti))
         offset += nti
         for j in i:size(R,2)
@@ -70,12 +71,18 @@ function Base.setindex!(m::LMM,v::Vector,s::Symbol)
         end
         inflate!(R[i,i])
     end
+    cfactor!(R)
 end
 
-@doc "`fit(m)` -> m Optimize the objective using an NLopt optimizer"->
+"""
+`fit(m)` -> `m`
+
+Optimize the objective using an NLopt optimizer.
+"""
 function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     m.fit && return m
-    th = getpars(m); k = length(th)
+    th = m[:θ]
+    k = length(th)
     if optimizer == :default
         optimizer = hasgrad(m) ? :LD_MMA : :LN_BOBYQA
     end
@@ -83,12 +90,13 @@ function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     NLopt.ftol_rel!(opt, 1e-12)   # relative criterion on deviance
     NLopt.ftol_abs!(opt, 1e-8)    # absolute criterion on deviance
     NLopt.xtol_abs!(opt, 1e-10)   # criterion on parameter value changes
-    NLopt.lower_bounds!(opt, lower(m))
+    NLopt.lower_bounds!(opt, lowerbd(m))
     feval = 0
     geval = 0
     function obj(x::Vector{Float64}, g::Vector{Float64})
         feval += 1
-        val = objective(setpars!(m,x))
+        m[:θ] = x
+        val = objective(m)
         if length(g) == length(x)
             geval += 1
             grad!(g,m)
@@ -98,7 +106,8 @@ function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     if verbose
         function vobj(x::Vector{Float64}, g::Vector{Float64})
             feval += 1
-            val = objective(setpars!(m,x))
+            m[:θ] = x
+            val = objective(m)
             print("f_$feval: $(round(val,5)), [")
             showcompact(x[1])
             for i in 2:length(x) print(","); showcompact(x[i]) end
@@ -149,41 +158,12 @@ function inflate!(A::LowerTriangular{Float64})
 end
 
 
-Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.L)[1:end-1])
+Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-1])
 
-lower(lmm::LMM) = lmm.lower
-
-@doc "Negative twice the log-likelihood"->
+"Negative twice the log-likelihood"
 function objective(lmm::LMM)
     n = size(lmm.trms[1],1)
-    logdet(lmm) + n*(1.+log(2π*abs2(lmm.L[end,end][end,end])/n))
-end
-
-@doc "Install new parameter values.  Update `trms` and the Cholesky factor `L`"->
-function setpars!(lmm::LMM,pars::Vector{Float64})
-    all(pars .>= lmm.lower) || error("elements of pars violate bounds")
-    copy!(lmm.pars,pars)
-    gp = lmm.gp
-    nt = length(lmm.trms)               # number of terms
-    L = lmm.L
-    A = lmm.A
-    for j in 1:nt, i in j:nt
-        inject!(L[i,j],A[i,j])
-    end
-    ## set parameters in r.e. terms, scale rows and columns, add identity
-    for j in 1:(nt-1)
-        tj = lmm.trms[j]
-        setpars!(tj,sub(pars,gp[j]:(gp[j+1]-1)))
-        for i in j:nt                   # scale the jth column by λ'
-            scale!(L[i,j],tj)
-        end
-        for jj in 1:j                   # scale the jth row by λ
-            scale!(tj,L[j,jj])
-        end
-        inflate!(L[j,j])                # L[j,j] += I
-    end
-    cfactor!(L)
-    lmm
+    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][end,end])/n))
 end
 
 function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{T})
@@ -192,6 +172,19 @@ function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{
     length(dd) == m || throw(DimensionMismatch(""))
     for j in 1:n, i in 1:m
         B[i,j] /= dd[i]
+    end
+    B
+end
+
+function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(A::HBlkDiag,B::DenseMatrix{T})
+    m,n = size(B)
+    aa = A.arr
+    r,s,k = size(aa)
+    m == Base.LinAlg.chksquare(A) || throw(DimensionMismatch())
+    scr = Array(T,(r,n))
+    for i in 1:k
+        bb = sub(B,(i-1)*r+(1:r),:)
+        copy!(bb,Base.LinAlg.Ac_ldiv_B!(UpperTriangular(sub(aa,:,:,i)),copy!(scr,bb)))
     end
     B
 end
@@ -219,6 +212,16 @@ end
 function Base.logdet(t::LowerTriangular)
     n = Base.LinAlg.chksquare(t)
     mapreduce(log,(+),diag(t))
+end
+
+function Base.logdet{T<:FloatingPoint}(R::HBlkDiag{T})
+    ra = R.arr
+    ret = zero(T)
+    r,s,k = size(ra)
+    for i in 1:k
+        ret += logdet(UpperTriangular(sub(ra,:,:,i)))
+    end
+    ret
 end
 
 function Base.LinAlg.A_rdiv_Bc!{T<:FloatingPoint}(A::SparseMatrixCSC{T},B::Diagonal{T})
