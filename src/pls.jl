@@ -60,7 +60,6 @@ function Base.setindex!(m::LMM,v::Vector,s::Symbol)
     for i in eachindex(lam)
         li = lam[i]
         nti = nθ(li)
-        @show nti,sub(v,offset+(1:nti))
         li[:θ] = sub(v,offset + (1:nti))
         offset += nti
         for j in i:size(R,2)

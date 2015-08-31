@@ -68,11 +68,11 @@ function lowerbd{T}(A::ColMajorLowerTriangular{T})
 end
 
 """
-size of the parameter vector
+length of the parameter vector for the term
 """
 nθ(A::ColMajorLowerTriangular) = nlower(size(A.Lambda.data,1))
 
-function Base.scale!(A::ColMajorLowerTriangular,B::HBlkDiag)
+function Base.Ac_mul_B!(A::ColMajorLowerTriangular,B::HBlkDiag)
     Ba = B.arr
     r,s,k = size(Ba)
     Al = A.Lambda
@@ -86,17 +86,6 @@ function Base.scale!(A::ColMajorLowerTriangular,B::HBlkDiag)
     B
 end
 
-function Base.scale!(A::HBlkDiag,B::ColMajorLowerTriangular)
-    aa = A.arr
-    r,s,k = size(aa)
-    bl = B.Lambda
-    (l = Base.LinAlg.chksquare(bl)) == r == s || throw(DimensionMismatch())
-    for i in 1:k
-        A_mul_B!(sub(aa,:,:,i),bl)
-    end
-    A
-end
-
 function Base.Ac_mul_B!{T}(A::ColMajorLowerTriangular{T},B::Diagonal{T})
     size(A,1) == 1 || throw(DimensionMismatch())
     scale!(A.Lambda.data[1,1],B.diag)
@@ -107,22 +96,18 @@ LT(A::ReMat) = ColMajorLowerTriangular(eltype(A.z),1)
 
 LT(A::VectorReMat) = (Az = A.z; ColMajorLowerTriangular(eltype(Az),size(Az,1)))
 
-function Base.scale!{T}(A::ColMajorLowerTriangular{T},B::DenseVecOrMat{T})
+function Base.Ac_mul_B!{T}(A::ColMajorLowerTriangular{T},B::DenseVecOrMat{T})
     al = A.Lambda
-    (l = Base.LinAlg.chksquare(al)) == 1 && return scale!(al.data[1],B)
+    if (l = Base.LinAlg.chksquare(al)) == 1
+        return scale!(al.data[1],B)
+    end
     m,n = size(B,1),size(B,2)
-    Base.LinAlg.Ac_mul_B!(al,reshape(B,(l,div(m,l)*n)))
+    Base.LinAlg.Ac_mul_B!(al,reshape(B,(p,div(m,p)*n)))
     B
 end
 
 function Base.scale!{T}(A::AbstractMatrix{T},B::ColMajorLowerTriangular{T})
-    bl = B.Lambda
-    (l = Base.LinAlg.chksquare(bl)) == 1 && return scale!(A,bl.data[1])
-    m,n = size(A,1),size(A,2)
-    q,r = divrem(n,l)
-    r == 0 || throw(DimensionMismatch())
-    for b in 0:(q-1)
-        A_mul_B!(sub(A,:,b*q + (1:q)),bl)
-    end
-    A
+    bld = B.Lambda.data
+    size(bld,1) == 1 && return scale!(A,bld[1])
+    error("code not yet written")
 end
