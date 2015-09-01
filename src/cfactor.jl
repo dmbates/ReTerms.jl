@@ -9,14 +9,14 @@ function cfactor!(A::AbstractMatrix)
 #    @inbounds begin
         for k = 1:n
             for i in 1:(k - 1)
-                downdate!(A[k,k],A[i,k])  # A[k,k] -= A[i.k]'A[i.k]
+                downdate!(A[k,k],A[i,k])  # A[k,k] -= A[i,k]'A[i,k]
             end
             cfactor!(A[k,k])   # right Cholesky factor of A[k,k]
             for j in (k + 1):n
-                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
                 for i in 1:(k - 1)
-                    downdate!(A[i,k],A[i,j],A[k,j]) # A[i,k] -= A[i,j]*A[k,j]
+                    downdate!(A[k,j],A[i,k],A[i,j]) # A[k,j] -= A[i,k]*A[i,j]
                 end
+                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
             end
         end
 #    end
@@ -40,7 +40,7 @@ downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64}) =
     BLAS.syrk!('U','T',-1.0,A,1.0,C)
 downdate!(C::DenseMatrix{Float64},A::DenseMatrix{Float64},B::DenseMatrix{Float64}) =
     BLAS.gemm!('T','N',-1.0,A,B,1.0,C)
-function downdate!(C::Diagonal{Float64},A::SparseMatrixCSC{Float64,BlasInt})
+function downdate!{T}(C::Diagonal{T},A::SparseMatrixCSC{T})
     m,n = size(A)
     dd = C.diag
     length(dd) == n || throw(DimensionMismatch(""))
@@ -52,6 +52,7 @@ function downdate!(C::Diagonal{Float64},A::SparseMatrixCSC{Float64,BlasInt})
     end
     C
 end
+
 if Base.blas_vendor() == :mkl
     function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64,BlasInt},B::DenseMatrix{Float64})
         ma,na = size(A); mb,nb = size(B); mc,nc = size(C)
@@ -123,7 +124,7 @@ if Base.blas_vendor() == :mkl
         C
     end
 else
-    function downdate!(C::DenseMatrix{Float64},A::SparseMatrixCSC{Float64,BlasInt},B::DenseMatrix{Float64})
+    function downdate!{T}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::DenseMatrix{T})
         m,n = size(A)
         r,s = size(C)
         r == n && s == size(B,2) && m == size(B,1) || throw(DimensionMismatch(""))

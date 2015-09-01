@@ -29,7 +29,7 @@ const rhs = sf'Yield
 const L = ReTerms.LT(sf)
 L[:θ] = [0.5]
 
-@test isa(Ac_mul_B!(L,crp),Diagonal)
+@test isa(scale!(L,crp),Diagonal)
 @test crp.diag == fill(2.5,6)
 @test copy!(crp1,crp) == crp
 

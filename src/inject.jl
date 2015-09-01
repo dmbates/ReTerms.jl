@@ -21,18 +21,6 @@ end
 
 inject!(d::Diagonal{Float64},s::Diagonal{Float64}) = (copy!(d.diag,s.diag);d)
 
-function inject!{T<:Real}(d::Base.LinAlg.Cholesky{T},s::Base.LinAlg.Symmetric{T})
-    s.uplo == d.uplo || error("s.uplo and d.uplo must be the same")
-    n = Base.LinAlg.chksquare(s)
-    size(d) == (n,n) || throw(DimensionMismatch())
-    ss = s.data
-    dd = d.factors
-    for j in 1:n, i in (s.uplo == 'U' ? 1:j : j:n)
-        dd[i,j] = ss[i,j]
-    end
-    d
-end
-
 function inject!(d::SparseMatrixCSC{Float64},s::SparseMatrixCSC{Float64})
     m,n = size(d)
     size(d) == size(s) || throw(DimensionMismatch(""))

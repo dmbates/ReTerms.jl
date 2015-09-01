@@ -188,7 +188,7 @@ function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(A::HBlkDiag,B::DenseMatrix{T})
     B
 end
 
-function Base.LinAlg.Ac_ldiv_B!{T<:Float64}(D::Diagonal{T},B::SparseMatrixCSC{T,BlasInt})
+function Base.LinAlg.Ac_ldiv_B!{T<:Float64}(D::Diagonal{T},B::SparseMatrixCSC{T})
     m,n = size(B)
     dd = D.diag
     length(dd) == m || throw(DimensionMismatch(""))
