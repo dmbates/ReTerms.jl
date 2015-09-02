@@ -22,12 +22,23 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
     trms[end] = hcat(X,y)
     A = fill!(Array(Any,(nt,nt)),nothing)
     R = fill!(Array(Any,(nt,nt)),nothing)
-    for j in 1:nt, i in 1:j
-        A[i,j] = densify(trms[i]'trms[j])
-        R[i,j] = copy(A[i,j])
+    for j in 1:nt
+        for i in 1:j
+            A[i,j] = densify(trms[i]'trms[j])
+            R[i,j] = copy(A[i,j])
+        end
     end
-#    A[end,end] = Symmetric(triu(A[end,end]),:U)
-#    R[end,end] = cholfact!(R[end,end])
+    for j in 2:nreterms
+        if isa(R[j,j],Diagonal)
+            for i in 1:(j-1)     # check for fill-in
+                if !isdiag(A[i,j]'A[i,j])
+                    for k in j:nt
+                        R[j,k] = full(R[j,k])
+                    end
+                end
+            end
+        end
+    end
     LMM(trms,Λ,A,R,false)
 end
 
@@ -38,6 +49,8 @@ LMM(re::Vector,X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array
 LMM(g::PooledDataVector,y::DataVector) = LMM([ReMat(g)],y)
 
 LMM(re::Vector,y::DataVector) = LMM(re,ones(length(y),1),y)
+
+LMM(re::Vector,y::Vector) = LMM(re,map(LT,re),ones(length(y),1),y)
 
 chksz(A::ReMat,λ::ParamLowerTriangular) = size(λ,1) == 1
 chksz(A::VectorReMat,λ::ParamLowerTriangular) = size(λ,1) == size(A.z,1)
@@ -148,7 +161,7 @@ hasgrad(lmm::LMM) = false
 "Add an identity matrix to the argument, in place"
 inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1 end; D)
 
-function inflate!(A::LowerTriangular{Float64})
+function inflate!{T<:FloatingPoint}(A::StridedMatrix{T})
     n = Base.LinAlg.chksquare(A)
     for i in 1:n
         @inbounds A[i,i] += 1
@@ -156,8 +169,38 @@ function inflate!(A::LowerTriangular{Float64})
     A
 end
 
+"""
+LD(A) -> log(det(A)) for A diagonal, HBlkDiag, or UpperTriangular
+"""
+function LD{T}(d::Diagonal{T})
+    r = log(one(T))
+    dd = d.diag
+    for i in eachindex(dd)
+        r += log(dd[i])
+    end
+    r
+end
 
-Base.logdet(lmm::LMM) = 2.*mapreduce(logdet,(+),diag(lmm.R)[1:end-1])
+function LD{T}(d::HBlkDiag{T})
+    r = log(one(T))
+    aa = d.arr
+    p,q,k = size(aa)
+    for j in 1:k, i in 1:p
+        r += log(aa[i,i,j])
+    end
+    r
+end
+
+function LD{T}(d::DenseMatrix{T})
+    r = log(one(T))
+    n = Base.LinAlg.chksquare(d)
+    for j in 1:n
+        r += log(d[j,j])
+    end
+    r
+end
+
+Base.logdet(lmm::LMM) = 2.*mapreduce(LD,(+),diag(lmm.R)[1:end-1])
 
 "Negative twice the log-likelihood"
 function objective(lmm::LMM)
@@ -165,9 +208,9 @@ function objective(lmm::LMM)
     logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][end,end])/n))
 end
 
-function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{T})
+function Base.LinAlg.Ac_ldiv_B!{T}(D::UpperTriangular{T,Diagonal{T}},B::DenseMatrix{T})
     m,n = size(B)
-    dd = D.diag
+    dd = D.data.diag
     length(dd) == m || throw(DimensionMismatch(""))
     for j in 1:n, i in 1:m
         B[i,j] /= dd[i]
@@ -175,9 +218,9 @@ function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(D::Diagonal{T},B::DenseMatrix{
     B
 end
 
-function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(A::HBlkDiag,B::DenseMatrix{T})
+function Base.LinAlg.Ac_ldiv_B!{T}(A::UpperTriangular{T,HBlkDiag{T}},B::DenseMatrix{T})
     m,n = size(B)
-    aa = A.arr
+    aa = A.data.arr
     r,s,k = size(aa)
     m == Base.LinAlg.chksquare(A) || throw(DimensionMismatch())
     scr = Array(T,(r,n))
@@ -188,9 +231,9 @@ function Base.LinAlg.Ac_ldiv_B!{T<:FloatingPoint}(A::HBlkDiag,B::DenseMatrix{T})
     B
 end
 
-function Base.LinAlg.Ac_ldiv_B!{T<:Float64}(D::Diagonal{T},B::SparseMatrixCSC{T})
+function Base.LinAlg.Ac_ldiv_B!{T}(D::UpperTriangular{T,Diagonal{T}},B::SparseMatrixCSC{T})
     m,n = size(B)
-    dd = D.diag
+    dd = D.data.diag
     length(dd) == m || throw(DimensionMismatch(""))
     nzv = nonzeros(B)
     rv = rowvals(B)

@@ -128,7 +128,8 @@ function Base.scale!{T}(A::Diagonal{T},B::ColMajorLowerTriangular{T})
         throw(DimensionMismatch(
         "for scale!(A::Diagonal,B::ColMajorLowerTriangular) B must be 1×1"))
     end
-    scale!(A,bl[1])
+    scale!(bl[1],A.diag)
+    A
 end
 
 function Base.scale!{T}(A::HBlkDiag{T},B::ColMajorLowerTriangular{T})

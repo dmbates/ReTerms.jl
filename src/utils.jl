@@ -38,7 +38,7 @@ function getpool(f::HDF5.HDF5Dataset,dd)
                           nu > typemax(Int16) ? Int32 :
                           nu > typemax(Int8) ? Int16 : Int8}, [1:nu;])
 end
-        
+
 """Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""
 function g2dict(fid::HDF5File,gnm)
     res = Dict{Symbol,Any}()

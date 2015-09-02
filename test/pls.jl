@@ -23,9 +23,16 @@ fm3 = LMM([VectorReMat(slp[:Subject],X')],X,slp[:Reaction])
 @test lowerbd(fm3) == [0.,-Inf,0.]
 fit(fm3)
 @test ReTerms.objective(fm3) ≈ 1751.9393444663153
-@test fm3[:θ] ≈ [0.9292213024991977,0.018168364234210234,0.22264488494565465]
+@test_approx_eq_eps fm3[:θ] [0.9292213074888169,0.01816838485113137,0.22264487095998978] 1.e-6
 
 fm4 = LMM([ReMat(psts[s]) for s in [:Sample,:Batch]],psts[:Strength])
 @test lowerbd(fm4) == zeros(2)
 @test fm4[:θ] == ones(2)
 fit(fm4)
+@test ReTerms.objective(fm4) ≈ 247.99446586325791
+@test fm4[:θ] ≈ [3.526885897445589,1.3299228050484744]
+
+fm5 = LMM([ReMat(pen[s]) for s in [:Plate,:Sample]],pen[:Diameter])
+@test lowerbd(fm5) == zeros(2)
+@test fm5[:θ] == ones(2)
+fit(fm5)

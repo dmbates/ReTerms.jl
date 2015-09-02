@@ -8,23 +8,26 @@ function cfactor!(A::AbstractMatrix)
     n = Base.LinAlg.chksquare(A)
 #    @inbounds begin
         for k = 1:n
+            Akk = A[k,k]
             for i in 1:(k - 1)
-                downdate!(A[k,k],A[i,k])  # A[k,k] -= A[i,k]'A[i,k]
+                downdate!(Akk,A[i,k])  # A[k,k] -= A[i,k]'A[i,k]
             end
-            cfactor!(A[k,k])   # right Cholesky factor of A[k,k]
+            Akk = cfactor!(Akk)   # right Cholesky factor of A[k,k]
             for j in (k + 1):n
                 for i in 1:(k - 1)
                     downdate!(A[k,j],A[i,k],A[i,j]) # A[k,j] -= A[i,k]*A[i,j]
                 end
-                Base.LinAlg.Ac_ldiv_B!(A[k,k],A[k,j])
+                Base.LinAlg.Ac_ldiv_B!(Akk,A[k,j])
             end
         end
 #    end
     UpperTriangular(A)
 end
 
-cfactor!(x::Number) = sqrt(x)
-cfactor!(D::Diagonal) = (map!(sqrt,D.diag); D)
+function cfactor!(D::Diagonal)
+    map!(sqrt,D.diag)
+    UpperTriangular(D)
+end
 cfactor!(R::Matrix{Float64}) = Base.LinAlg.chol!(R,Val{:U})
 function cfactor!(R::HBlkDiag)
     Ra = R.arr
@@ -32,7 +35,7 @@ function cfactor!(R::HBlkDiag)
     for i in 1:k
         Base.LinAlg.chol!(sub(Ra,:,:,i),Val{:U})
     end
-    R
+    UpperTriangular(R)
 end
 
 "Subtract, in place, A'A or A'B from C"
@@ -136,7 +139,7 @@ else
         C
     end
 
-    function downdate!{T<:FloatingPoint}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
+    function downdate!{T}(C::DenseMatrix{T},A::SparseMatrixCSC{T},B::SparseMatrixCSC{T})
         ma,na = size(A)
         mb,nb = size(B)
         ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
@@ -159,28 +162,23 @@ else
         C
     end
 
-    function downdate!(C::LowerTriangular{Float64},A::SparseMatrixCSC{Float64,BlasInt})
+    function downdate!{T}(C::DenseMatrix{T},A::SparseMatrixCSC{T})
         m,n = size(A)
-        m == size(A,1) || throw(DimensionMismatch(""))
-        rv = rowvals(A)
-        nz = nonzeros(A)
-        cc = C.data
-        @inbounds for k in 1:n
-            rng = nzrange(A,k)
-            nzk = view(nz,rng)
-            rvk = view(rv,rng)
-            for j in eachindex(rng)
-                nzkj = nzk[j]
-                rvkj = rvk[j]
-                for i in j:length(rng)
-                    cc[rvk[i],rvkj] -= nzkj*nzk[i]
+        n == Base.LinAlg.chksquare(C) || throw(DimensionMismatch(""))
+        tt = A'A
+        nzv = nonzeros(tt)
+        rv = rowvals(tt)
+        for j in 1:n
+            for k in nzrange(tt,j)
+                if (i = rv[k]) ≤ j
+                    C[i,j] -= nzv[k]
                 end
             end
-        end
+        end 
         C
     end
 
-    function downdate!{T<:Float64}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T,BlasInt})
+    function downdate!{T}(C::DenseMatrix{T},A::DenseMatrix{T},B::SparseMatrixCSC{T})
         ma,na = size(A)
         mb,nb = size(B)
         ma == size(C,1) && mb == size(C,2) && na == nb || throw(DimensionMismatch(""))
