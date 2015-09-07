@@ -84,14 +84,14 @@ end
 
 function Base.Ac_mul_B(A::VectorReMat,B::VectorReMat)
     Az = A.z
-    Ar = A.f.refs
+    Ar = convert(Vector{Int},A.f.refs)
     if is(A,B)
         l,n = size(Az)
         T = eltype(Az)
         np = length(A.f.pool)
         a = zeros(T,(l,l,np))
         for i in eachindex(Ar)
-            Base.LinAlg.BLAS.syr!('L',one(T),sub(Az,:,i),sub(a,:,:,Int(Ar[i])))
+            Base.LinAlg.BLAS.syr!('L',one(T),sub(Az,:,i),sub(a,:,:,Ar[i]))
         end
         for k in 1:np
             Base.LinAlg.copytri!(sub(a,:,:,k),'L')
@@ -99,9 +99,9 @@ function Base.Ac_mul_B(A::VectorReMat,B::VectorReMat)
         return HBlkDiag(a)
     end
     Bz = B.z
-    Br = B.f.refs
+    Br = convert(Vector{Int},B.f.refs)
     (m = length(Ar)) == length(Br) || throw(DimensionMismatch())
-    sparse(convert(Vector{Int32},Ar),convert(Vector{Int32},Br),[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:m])
+    sparse(Ar,Br,[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:m])
 end
 
 function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::DenseVecOrMat{T},B::AbstractReMat)

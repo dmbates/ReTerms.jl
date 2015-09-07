@@ -2,7 +2,7 @@
 
 module ReTerms
 
-using DataArrays, DataFrames, HDF5, NLopt, StatsBase, SparseVectors
+using DataArrays, DataFrames, HDF5, NLopt, StatsBase
 
 export LMM,ReMat,VectorReMat,ColMajorLowerTriangular
 
