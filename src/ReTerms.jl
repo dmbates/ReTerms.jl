@@ -6,7 +6,7 @@ using DataArrays, DataFrames, HDF5, NLopt, StatsBase, SparseVectors
 
 export LMM,ReMat,VectorReMat,ColMajorLowerTriangular
 
-export g2dict, lowerbd, objective
+export AIC, BIC, fixef, g2dict, lowerbd, objective, pwrss
 
 using Base.LinAlg.BlasInt
 

@@ -46,6 +46,8 @@ LMM(re::Vector,Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert
 
 LMM(re::Vector,X::DenseMatrix,y::DataVector) = LMM(re,map(LT,re),X,convert(Array,y))
 
+LMM(re::Vector,X::DenseMatrix,y::Vector) = LMM(re,map(LT,re),X,y)
+
 LMM(g::PooledDataVector,y::DataVector) = LMM([ReMat(g)],y)
 
 LMM(re::Vector,y::DataVector) = LMM(re,ones(length(y),1),y)
@@ -306,4 +308,38 @@ function Base.LinAlg.A_rdiv_B!(A::StridedVecOrMat,D::Diagonal)
     A
 end
 
+AIC(m::LMM) = objective(m) + 2npar(m)
+
+BIC(m::LMM) = objective(m) + npar(m)*log(nobs(m))
+
 Base.LinAlg.A_rdiv_Bc!(A::StridedVecOrMat,D::Diagonal) = A_rdiv_B!(A,D)
+
+Base.cholfact(m::LMM) = UpperTriangular(m.R[end,end][1:end-1,1:end-1])
+
+fixef(m::LMM) = cholfact(m)\m.R[end,end][1:end-1,end]
+
+StatsBase.coef(m::LMM) = fixef(m)
+
+StatsBase.nobs(m::LMM) = size(m.trms[end],1)
+
+function StatsBase.vcov(m::LMM)
+    Rinv = Base.LinAlg.inv!(cholfact(m))
+    varest(m)*Rinv*Rinv'
+end
+
+"""
+Number of parameters in the model.
+
+Note that `size(m.trms[end],2)` is `length(coef(m)) + 1`, thereby accounting
+for the scale parameter, σ, that is profiled out.
+"""
+npar(m::LMM) = size(m.trms[end],2) + length(m[:θ])
+
+sqrtpwrss(m::LMM) = m.R[end,end][end,end]
+
+"""
+returns s², the estimate of σ², the variance of the conditional distribution of Y given B
+"""
+varest(m::LMM) = pwrss(m)/nobs(m)
+
+pwrss(m::LMM) = abs2(sqrtpwrss(m))
