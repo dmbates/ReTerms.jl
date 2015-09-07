@@ -101,7 +101,7 @@ function Base.Ac_mul_B(A::VectorReMat,B::VectorReMat)
     Bz = B.z
     Br = B.f.refs
     (m = length(Ar)) == length(Br) || throw(DimensionMismatch())
-    sparse(convert(Int32,r),convert(Int32,s),[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:n])
+    sparse(convert(Vector{Int32},Ar),convert(Vector{Int32},Br),[sub(Az,:,i)*sub(Bz,:,i)' for i in 1:m])
 end
 
 function Base.Ac_mul_B!{T}(R::DenseVecOrMat{T},A::DenseVecOrMat{T},B::AbstractReMat)
