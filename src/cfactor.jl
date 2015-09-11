@@ -174,7 +174,7 @@ else
                     C[i,j] -= nzv[k]
                 end
             end
-        end 
+        end
         C
     end
 

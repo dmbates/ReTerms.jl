@@ -1,9 +1,23 @@
+"Summary of optimization using the NLopt package"
+type OptSummary
+    initial::Vector{Float64}
+    final::Vector{Float64}
+    fmin::Float64
+    feval::Int
+    geval::Int
+    optimizer::Symbol
+end
+function OptSummary(initial::Vector{Float64},optimizer::Symbol)
+    OptSummary(initial,initial,Inf,-1,-1,optimizer)
+end
+
 type LMM <: StatsBase.RegressionModel
     trms::Vector
     Λ::Vector
     A::Matrix        # symmetric cross-product blocks (upper triangle)
     R::Matrix        # right Cholesky factor in blocks.
     fit::Bool
+    opt::OptSummary
 end
 
 function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
@@ -14,7 +28,7 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
     n,p = size(X)
     all(t -> size(t,1) == n,Rem) && length(y) == n || throw(DimensionMismatch("n not consistent"))
     nreterms = length(Rem)
-    length(Λ) == nreterms && all([chksz(Rem[i],Λ[i]) for i in 1:nreterms]) ||
+    length(Λ) == nreterms && all(i->chksz(Rem[i],Λ[i]),1:nreterms) ||
         throw(DimensionMismatch("Rem and Λ"))
     nt = nreterms + 1
     trms = Array(Any,nt)
@@ -29,7 +43,7 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
         end
     end
     for j in 2:nreterms
-        if isa(R[j,j],Diagonal)
+        if isa(R[j,j],Diagonal) || isa(R[j,j],HBlkDiag)
             for i in 1:(j-1)     # check for fill-in
                 if !isdiag(A[i,j]'A[i,j])
                     for k in j:nt
@@ -39,7 +53,7 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
             end
         end
     end
-    LMM(trms,Λ,A,R,false)
+    LMM(trms,Λ,A,R,false,OptSummary(mapreduce(x->x[:θ],vcat,Λ),:None))
 end
 
 LMM(re::Vector,Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
@@ -146,11 +160,16 @@ function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
             xmin1[i] = 0.
         end
     end
-        if modified && (ff = objective(setpars!(m,xmin1))) < fmin
+    if modified
+        m[:θ] = xmin1
+        if (ff = objective(m)) < fmin
             fmin = ff
             copy!(xmin,xmin1)
+        else
+            m[:θ] = xmin
         end
-#        m.opt = OptSummary(th,xmin,fmin,feval,geval,optimizer)
+    end
+    m.opt = OptSummary(th,xmin,fmin,feval,geval,optimizer)
     if verbose println(ret) end
     m.fit = true
     m

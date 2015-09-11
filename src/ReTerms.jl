@@ -4,7 +4,7 @@ module ReTerms
 
 using DataArrays, DataFrames, HDF5, NLopt, StatsBase
 
-export LMM,ReMat,VectorReMat,ColMajorLowerTriangular
+export LMM,ReMat,VectorReMat,ColMajorLowerTriangular,DiagonalLowerTriangular
 
 export AIC, BIC, fixef, g2dict, lowerbd, objective, pwrss
 

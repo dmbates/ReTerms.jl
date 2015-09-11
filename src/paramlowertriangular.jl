@@ -154,3 +154,79 @@ function Base.scale!{T}(A::StridedMatrix{T},B::ColMajorLowerTriangular{T})
     end
     A
 end
+
+immutable DiagonalLowerTriangular{T} <: ParamLowerTriangular{T}
+    diag::Vector{T}
+end
+
+DiagonalLowerTriangular(typ,n::Integer) = DiagonalLowerTriangular(ones(typ,n))
+
+DiagonalLowerTriangular(n::Integer) = DiagonalLowerTriangular(ones(n))
+
+Base.full(A::DiagonalLowerTriangular) = Diagonal(A.diag)
+
+Base.convert(::Type{LowerTriangular},A::DiagonalLowerTriangular) = LowerTriangular(full(A))
+
+Base.size(A::DiagonalLowerTriangular) = (n=length(A.diag);(n,n))
+
+function Base.getindex(A::DiagonalLowerTriangular,s::Symbol)
+    s == :θ || throw(KeyError(s))
+    copy(A.diag)
+end
+
+nθ(A::DiagonalLowerTriangular) = length(A.diag)
+
+Base.getindex(A::DiagonalLowerTriangular,i::Integer,j::Integer) = full(A)[i,j]
+
+function Base.setindex!{T}(A::DiagonalLowerTriangular{T},v::StridedVector{T},s::Symbol)
+    s == :θ || throw(KeyError(s))
+    copy!(A.diag,v)
+    A
+end
+
+function lowerbd{T}(A::DiagonalLowerTriangular{T})
+    zeros(A.diag)
+end
+
+function Base.scale!(A::DiagonalLowerTriangular,B::HBlkDiag)
+    bb = B.arr
+    r,s,k = size(bb)
+    dd = A.diag
+    r == length(dd) || throw(DimensionMismatch())
+    if r == 1
+        scale!(bb,dd[1])
+    else
+        scale!(dd,reshape(bb,(r,s*k)))
+    end
+    bb
+end
+
+function Base.scale!{T}(A::DiagonalLowerTriangular{T},B::DenseVecOrMat{T})
+    m,n = size(B)
+    dd = A.diag
+    l = length(dd)
+    scale!(dd,reshape(B,(l,div(m,l)*n)))
+    B
+end
+
+function Base.scale!{T}(A::HBlkDiag,B::DiagonalLowerTriangular{T})
+    aa = A.arr
+    r,s,k = size(aa)
+    for i in 1:k
+        scale!(sub(aa,:,:,i),B.diag)
+    end
+    A
+end
+
+function Base.scale!{T}(A::StridedMatrix{T},B::DiagonalLowerTriangular{T})
+    dd = B.diag
+    l = length(dd)
+    l == 1 && return scale!(A,dd[1])
+    m,n = size(A)
+    q,r = divrem(n,l)
+    r == 0 || throw(DimensionMismatch("size(A,2) = $n must be a multiple of size(B,1) = $l"))
+    for k in 0:(q-1)
+        scale!(sub(A,:,k*l + (1:l)),dd)
+    end
+    A
+end

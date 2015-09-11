@@ -70,6 +70,21 @@ function Base.cholfact!(A::HBlkDiag,uplo::Symbol=:U)
     A
 end
 
+function Base.full(A::HBlkDiag)
+    aa = A.arr
+    res = zeros(eltype(aa),size(A))
+    p,q,l = size(aa)
+    for b in 1:l
+        bm1 = b - 1
+        for j in 1:q
+            for i in 1:p
+                res[bm1*p+i,bm1*q+j] = aa[i,j,b]
+            end
+        end
+    end
+    res
+end
+
 """
 Equivalent to `A = A + I` without making a copy of A
 """
