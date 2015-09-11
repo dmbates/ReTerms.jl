@@ -1,7 +1,7 @@
-@doc """
+"""
 A `scalar random-effects term` with a non-unit matrix `Z'`.
 This type of term is unusual and included for completeness.
-"""->
+"""
 type ScalarReTerm <: ReTerm
     f::PooledDataVector                 # grouping factor
     z::Vector{Float64}

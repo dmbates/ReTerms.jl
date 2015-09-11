@@ -1,7 +1,7 @@
-@doc """
+"""
 A `simple scalar random-effects term` is a scalar term in which
 the implicit matrix `Z'` is a row of 1's.
-"""->
+"""
 type SimpleScalarReTerm <: ReTerm
     f::PooledDataVector
     λ::Float64
