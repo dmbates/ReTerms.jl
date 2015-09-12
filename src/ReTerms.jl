@@ -2,11 +2,11 @@
 
 module ReTerms
 
-using DataArrays, DataFrames, HDF5, NLopt, StatsBase
+using DataArrays, DataFrames, NLopt, StatsBase
 
 export LMM,ReMat,VectorReMat,ColMajorLowerTriangular,DiagonalLowerTriangular
 
-export AIC, BIC, fixef, g2dict, lowerbd, objective, pwrss
+export AIC, BIC, fixef, lowerbd, objective, pwrss
 
 using Base.LinAlg.BlasInt
 
