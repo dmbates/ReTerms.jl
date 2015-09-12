@@ -43,37 +43,6 @@ function densify(S,threshold=0.3)
     res
 end
 
-"""Create a value of the pool for a PooledDataArray from an unsigned vector"""
-function getpool(f::HDF5.HDF5Dataset,dd)
-    uu = unique(dd)
-    isperm(uu) || error("unique values are not a permutation")
-    if exists(attrs(f),"pool")
-        pool = read(attrs(f)["pool"])
-        if eltype(pool) == UInt8
-            pool = convert(Vector{Char},pool)
-        end
-        return pool
-    end
-    nu = length(uu)
-    return convert(Vector{nu > typemax(Int32) ? Int64 :
-                          nu > typemax(Int16) ? Int32 :
-                          nu > typemax(Int8) ? Int16 : Int8}, [1:nu;])
-end
-
-"""Convert a group in an HDF5File to a Dict{Symbol,Any} using readmmap"""
-function g2dict(fid::HDF5File,gnm)
-    res = Dict{Symbol,Any}()
-    g = fid[gnm]
-    for nm in names(g)
-        dd = readmmap(g[nm])
-        if eltype(dd) <: Unsigned
-            dd = PooledDataArray(DataArrays.RefArray(dd),getpool(g[nm],dd))
-        end
-        res[Symbol(nm)] = dd
-    end
-    res
-end
-
 function Base.scale!(x::Number,t::UpperTriangular{Float64})
     m,n = size(t)
     td = t.data
@@ -89,21 +58,4 @@ function Base.scale!{T<:Number}(s::T,t::LowerTriangular{T})
         @inbounds td[i,j] *= s
     end
     t
-end
-
-function df2g(fid::HDF5File,nm::ByteString,df::DataFrame)
-    gg = g_create(fid,nm)
-    for sym in names(df)
-        d = df[sym]
-        if isa(d,DataArrays.PooledDataArray)
-            gg[string(sym)] = d.refs
-            if eltype(d.pool) <: Char
-                attrs(gg[string(sym)])["pool"] = convert(Vector{UInt8},d.pool)
-            else
-                attrs(gg[string(sym)])["pool"] = d.pool
-            end
-        else
-            gg[string(sym)] = convert(Array,d)
-        end
-    end
 end
