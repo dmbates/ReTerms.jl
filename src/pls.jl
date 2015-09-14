@@ -16,7 +16,6 @@ type LMM <: StatsBase.RegressionModel
     Λ::Vector
     A::Matrix        # symmetric cross-product blocks (upper triangle)
     R::Matrix        # right Cholesky factor in blocks.
-    fit::Bool
     opt::OptSummary
 end
 
@@ -53,7 +52,7 @@ function LMM(Rem::Vector, Λ::Vector, X::AbstractMatrix, y::Vector)
             end
         end
     end
-    LMM(trms,Λ,A,R,false,OptSummary(mapreduce(x->x[:θ],vcat,Λ),:None))
+    LMM(trms,Λ,A,R,OptSummary(mapreduce(x->x[:θ],vcat,Λ),:None))
 end
 
 LMM(re::Vector,Λ::Vector,X::AbstractMatrix,y::DataVector) = LMM(re,Λ,X,convert(Array,y))
@@ -108,7 +107,6 @@ end
 Optimize the objective using an NLopt optimizer.
 """
 function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
-    m.fit && return m
     th = m[:θ]
     k = length(th)
     if optimizer == :default
@@ -171,13 +169,35 @@ function StatsBase.fit(m::LMM, verbose::Bool=false, optimizer::Symbol=:default)
     end
     m.opt = OptSummary(th,xmin,fmin,feval,geval,optimizer)
     if verbose println(ret) end
-    m.fit = true
     m
 end
 
 grad!(v,lmm::LMM) = v
 
 hasgrad(lmm::LMM) = false
+
+"""
+Regenerate the last column of `m.A` from `m.trms`
+
+This should be called after updating parts of `m.trms[end]`, typically the response.
+"""
+function regenerateAend!(m::LMM)
+    n = Base.LinAlg.chksquare(m.A)
+    trmn = m.trms[n]
+    for i in 1:n
+        Ac_mul_B!(m.A[i,n],m.trms[i],trmn)
+    end
+    m
+end
+
+"""
+Reset the value of `m.θ` to the initial values
+"""
+function resetθ!(m::LMM)
+    m[:θ] = m.opt.initial
+    m.opt.feval = m.opt.geval = -1
+    m
+end
 
 "Add an identity matrix to the argument, in place"
 inflate!(D::Diagonal{Float64}) = (d = D.diag; for i in eachindex(d) d[i] += 1 end; D)
