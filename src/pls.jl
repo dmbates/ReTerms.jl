@@ -382,3 +382,41 @@ returns s², the estimate of σ², the variance of the conditional distribution 
 varest(m::LMM) = pwrss(m)/nobs(m)
 
 pwrss(m::LMM) = abs2(sqrtpwrss(m))
+
+"""
+Simulate `N` response vectors from `m`, refitting the model and accumulating
+the values of the extractors applied to the refitted model.  To save space the
+last column of `m.trms[end]`, which is the response vector, is overwritten by
+each simulation.  The original response should be saved before calling this function.
+"""
+function bootstrap!(m::LMM,N::Integer,extractors::Vector{Function},σ::Real=-1,mods::Vector{LMM}=LMM[])
+    if σ < 0.
+        σ = √varest(m)
+    end
+    vals = [(em = vec(e(m));similar(em,length(em),N)) for e in extractors]
+    trms = m.trms
+    nt = length(trms)
+    Xy = trms[end]
+    n,pp1 = size(Xy)
+    X = sub(Xy,:,1:pp1-1)
+    y = sub(Xy,:,pp1)
+    fev = X*coef(m)
+    vfac = LowerTriangular{Float64}[σ*convert(LowerTriangular,λ) for λ in m.Λ]  # lower Cholesky factors of relative covariances
+    remats = Matrix{Float64}[zeros(size(vfac[i],1),size(trms[i],2)) for i in eachindex(vfac)]
+    for kk in 1:N
+        for i in 1:n
+            y[i] = fev[i] + σ*randn()
+        end
+        for j in eachindex(vfac)
+            revec = vec(A_mul_B!(vfac[j],randn!(remats[j])))
+            A_mul_B!(1.,trms[j],revec,1.,y)
+        end
+        regenerateAend!(m)
+        resetθ!(m)
+        fit(m)
+        for i in eachindex(vals)
+            copy!(sub(vals[i],:,kk),extractors[i](m))
+        end
+    end
+    vals
+end
