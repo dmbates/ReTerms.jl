@@ -374,6 +374,11 @@ for the scale parameter, σ, that is profiled out.
 """
 npar(m::LMM) = size(m.trms[end],2) + length(m[:θ])
 
+"""
+returns the square root of the penalized residual sum-of-squares
+
+This is the bottom right element of the bottom right block of m.R
+"""
 sqrtpwrss(m::LMM) = m.R[end,end][end,end]
 
 """
@@ -381,42 +386,52 @@ returns s², the estimate of σ², the variance of the conditional distribution 
 """
 varest(m::LMM) = pwrss(m)/nobs(m)
 
+"""
+returns the penalized residual sum-of-squares
+"""
 pwrss(m::LMM) = abs2(sqrtpwrss(m))
 
 """
-Simulate `N` response vectors from `m`, refitting the model and accumulating
-the values of the extractors applied to the refitted model.  To save space the
-last column of `m.trms[end]`, which is the response vector, is overwritten by
-each simulation.  The original response should be saved before calling this function.
+Simulate `N` response vectors from `m`, refitting the model.  The function saveresults
+is called after each refit.
+
+To save space the last column of `m.trms[end]`, which is the response vector, is overwritten
+by each simulation.  The original response is restored before returning.
 """
-function bootstrap!(m::LMM,N::Integer,extractors::Vector{Function},σ::Real=-1,mods::Vector{LMM}=LMM[])
+function bootstrap!(m::LMM,N::Integer,saveresults::Function,σ::Real=-1,mods::Vector{LMM}=LMM[])
     if σ < 0.
         σ = √varest(m)
     end
-    vals = [(em = vec(e(m));similar(em,length(em),N)) for e in extractors]
     trms = m.trms
     nt = length(trms)
-    Xy = trms[end]
+    Xy = trms[nt]
     n,pp1 = size(Xy)
     X = sub(Xy,:,1:pp1-1)
     y = sub(Xy,:,pp1)
+    y0 = copy(y)
     fev = X*coef(m)
-    vfac = LowerTriangular{Float64}[σ*convert(LowerTriangular,λ) for λ in m.Λ]  # lower Cholesky factors of relative covariances
-    remats = Matrix{Float64}[zeros(size(vfac[i],1),size(trms[i],2)) for i in eachindex(vfac)]
+    vfac = [σ*convert(LowerTriangular,λ) for λ in m.Λ]  # lower Cholesky factors of relative covariances
+    remats = Matrix{Float64}[]
+    for i in eachindex(vfac)
+        vsz = size(trms[i],2)
+        nr = size(vfac[i],1)
+        push!(remats,reshape(zeros(vsz),(nr,div(vsz,nr))))
+    end
     for kk in 1:N
         for i in 1:n
             y[i] = fev[i] + σ*randn()
         end
-        for j in eachindex(vfac)
-            revec = vec(A_mul_B!(vfac[j],randn!(remats[j])))
-            A_mul_B!(1.,trms[j],revec,1.,y)
+        for j in eachindex(remats)
+            mat = vec(A_mul_B!(vfac[j],randn!(remats[j])))
+            A_mul_B!(1.,trms[j],vec(mat),1.,y)
         end
         regenerateAend!(m)
         resetθ!(m)
         fit(m)
-        for i in eachindex(vals)
-            copy!(sub(vals[i],:,kk),extractors[i](m))
-        end
+        saveresults(kk,m)
     end
-    vals
+    copy!(y,y0)
+    regenerateAend!(m)
+    resetθ!(m)
+    fit(m)
 end
