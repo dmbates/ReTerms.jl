@@ -241,13 +241,17 @@ function LD{T}(d::DenseMatrix{T})
     r
 end
 
-Base.logdet(lmm::LMM) = 2.*mapreduce(LD,(+),diag(lmm.R)[1:end-1])
+function LD(m::LMM)
+    R = m.R
+    s = 0.
+    for i in eachindex(m.Λ)
+        s += LD(R[i,i])
+    end
+    2.*s
+end
 
 "Negative twice the log-likelihood"
-function objective(lmm::LMM)
-    n = size(lmm.trms[1],1)
-    logdet(lmm) + n*(1.+log(2π*abs2(lmm.R[end,end][end,end])/n))
-end
+objective(m::LMM) = LD(m) + nobs(m)*(1.+log(2π*varest(m)))
 
 function Base.LinAlg.Ac_ldiv_B!{T}(D::UpperTriangular{T,Diagonal{T}},B::DenseMatrix{T})
     m,n = size(B)
@@ -398,7 +402,7 @@ is called after each refit.
 To save space the last column of `m.trms[end]`, which is the response vector, is overwritten
 by each simulation.  The original response is restored before returning.
 """
-function bootstrap!(m::LMM,N::Integer,saveresults::Function,σ::Real=-1,mods::Vector{LMM}=LMM[])
+function bootstrap(m::LMM,N::Integer,saveresults::Function,σ::Real=-1,mods::Vector{LMM}=LMM[])
     if σ < 0.
         σ = √varest(m)
     end
