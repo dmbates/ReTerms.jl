@@ -48,7 +48,9 @@ function Base.A_mul_B!{T}(α::Real,A::AbstractReMat,B::StridedVecOrMat{T},β::Re
     n,q = size(A)
     k = size(B,2)
     size(R,1) == n && size(B,1) == q && size(R,2) == k || throw(DimensionMismatch())
-    scale!(β,R)
+    if β ≠ 1
+        scale!(β,R)
+    end
     rr = A.f.refs
     zz = A.z
     if isa(A,ReMat)
@@ -59,7 +61,7 @@ function Base.A_mul_B!{T}(α::Real,A::AbstractReMat,B::StridedVecOrMat{T},β::Re
         l = size(zz,1)
         Bt = reshape(B,(l,div(q,l),k))
         for j in 1:k, i in 1:n
-            Base.axpy!(α*sub(Bt,:,rr[i],j),sub(zz,:,i),R[i,j])
+            R[i,j] += α * dot(sub(Bt,:,Int(rr[i]),j),sub(zz,:,i))
         end
     end
     R
